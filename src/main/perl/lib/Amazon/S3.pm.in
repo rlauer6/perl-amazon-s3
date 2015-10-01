@@ -388,6 +388,7 @@ sub list_bucket_all {
     if !$bucket;
 
   my $response = $self->list_bucket($conf);
+  croak 'The server has stopped responding' unless $response;
 
   return $response
     if !$response->{is_truncated};
@@ -402,6 +403,7 @@ sub list_bucket_all {
     $conf->{bucket} = $bucket;
 
     $response = $self->list_bucket($conf);
+    croak 'The server has stopped responding' unless $response;
 
     push @{ $all->{keys} }, @{ $response->{keys} };
 
