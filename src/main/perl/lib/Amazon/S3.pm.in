@@ -564,6 +564,11 @@ sub _send_request {
 
   my $content = $response->content;
 
+  if ($response->code !~ /^2\d\d$/) {
+    $self->_remember_errors($response->content, 1);
+    return;
+  }
+
   if ( $content && $response->content_type eq 'application/xml' ) {
     $content = $self->_xpc_of_content($content);
   } ## end if ( $content && $response...)
@@ -575,6 +580,29 @@ sub _send_request {
 sub _do_http {
 ########################################################################
   my ( $self, $request, $filename ) = @_;
+
+  # convenient time to reset any error conditions
+  $self->err(undef);
+  $self->errstr(undef);
+  my $response = $self->ua->request($request, $filename);
+
+  # For new buckets at non-standard locations, amazon will sometimes
+  # respond with a temprary redirect.  In this case it is necessary
+  # to try again with the new URL
+  if ($response->code =~ /^3/ and defined $response->header('Location')) {
+
+    # print "Redirecting to:  " . $response->header('Location') . "\n";
+    $request->uri($response->header('Location'));
+    $response = $self->ua->request($request, $filename);
+  }
+
+  return $response;
+}
+
+# Call this if handling any temporary redirect issues
+# (Like needing to probe with a HEAD request when file handle are involved)
+sub _do_http_no_redirect {
+  my ($self, $request, $filename) = @_;
 
   # convenient time to reset any error conditions
   $self->err(undef);
@@ -625,7 +653,7 @@ sub _send_request_expect_nothing_probed {
   my $old_redirectable = $self->ua->requests_redirectable;
   $self->ua->requests_redirectable( [] );
 
-  my $response = $self->_do_http($request);
+  my $response = $self->_do_http_no_redirect($request);
 
   $self->get_logger->trace( Dumper( [$response] ) );
 
@@ -639,7 +667,7 @@ sub _send_request_expect_nothing_probed {
     $request->uri($override_uri);
   } ## end if ( defined $override_uri)
 
-  $response = $self->_do_http($request);
+  $response = $self->_do_http_no_redirect($request);
 
   $self->get_logger->trace( Dumper( [$response] ) );
 
