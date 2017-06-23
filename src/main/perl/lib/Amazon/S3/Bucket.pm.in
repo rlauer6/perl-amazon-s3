@@ -85,6 +85,8 @@ sub add_key {
 
     $conf->{'Content-Length'} ||= -s ${$value};
     $value = _content_sub( ${$value}, $self->buffer_size );
+
+    $conf->{'x-amz-content-sha256'} = 'UNSIGNED-PAYLOAD';
   } ## end if ( ref $value eq 'SCALAR')
   else {
     $conf->{'Content-Length'} ||= length $value;
@@ -827,6 +829,30 @@ hood.
 
 See L<Amazon::S3/list_bucket_all_v2> for documentation of this
 method.
+
+=head2 abort_multipart_upload
+
+Abort a multipart upload
+
+=head2 complete_multipart_upload
+
+Signal completion of a multipart upload
+
+=head2 initiate_multipart_upload
+
+Initiate a multipart upload
+
+=head2 list_multipart_upload_parts
+
+List all the uploaded parts of a multipart upload
+
+=head2 list_multipart_uploads
+
+List multipart uploads in progress
+
+=head2 upload_part_of_multipart_upload
+
+Upload a portion of a multipart upload
 
 =head2 get_acl
 

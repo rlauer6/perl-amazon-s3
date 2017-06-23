@@ -21,6 +21,8 @@ use List::Util qw{ any };
 use URI::Escape qw(uri_escape_utf8);
 use XML::Simple;
 
+use Net::Amazon::Signature::V4;
+
 use parent qw{Class::Accessor::Fast};
 
 __PACKAGE__->mk_accessors(
@@ -126,6 +128,18 @@ sub new {
       requests_redirectable => [qw(GET HEAD DELETE)],
     );
   } ## end else [ if ( $self->retry ) ]
+
+  # The "default" region for Amazon is us-east-1
+  # This is the region to set it to for listing buckets
+  # We don't actually list buckets in our transport, but
+  # it is sometimes useful to list buckets in a test script
+  # For a specific bucket, it is necessary to call adjust_region
+  # to set the region that is appropriate for that bucket
+  $self->{'signer'} = Net::Amazon::Signature::V4->new(
+    $self->aws_access_key_id,
+    $self->aws_secret_access_key,
+    'us-east-1', 's3'
+  );
 
   $ua->timeout( $self->timeout );
   $ua->env_proxy;
@@ -520,27 +534,16 @@ sub _make_request {
 
   my $host = $self->host;
 
-  my $url;
-
-  if ( $path =~ /^([^\/?]+)(.*)/xsm
-    && _is_dns_bucket($1)
-    && $self->dns_bucket_names ) {
-    $url = "$protocol://$1.$host$2";
-  } ## end if ( $path =~ /^([^\/?]+)(.*)/xsm...)
-  else {
-    $path =~ s/\A\///xsm;
-    $url = "$protocol://$host/$path";
-  } ## end else [ if ( $path =~ /^([^\/?]+)(.*)/xsm...)]
-
-  if ( !exists $headers->{Authorization} ) {
-    $self->_add_auth_header( $http_headers, $method, $path );
-  } ## end if ( !exists $headers->...)
+  $path =~ s/\A\///xsm;
+  my $url = "$protocol://$host/$path";
 
   my $request = HTTP::Request->new( $method, $url, $http_headers );
 
   $self->last_request($request);
 
   $request->content($data);
+
+  $self->{'signer'}->sign( $request );
 
   $self->get_logger->trace( sub { return Dumper( [$request] ); } );
 
@@ -575,6 +578,64 @@ sub _send_request {
 
   return $content;
 } ## end sub _send_request
+
+#
+# This is the necessary to find and region for a specific bucket
+# and set the signer object to use that region when signing requests
+#
+sub adjust_region {
+    my ( $self, $bucket, $called_from_redirect ) = @_;
+
+    my $request = HTTP::Request->new('GET', 'https://' . $bucket . '.' . $self->host );
+    $self->{'signer'}->sign( $request );
+
+    my $response = $self->_do_http($request);
+
+    # If No error, then nothing to do
+    return 1 if $response->is_success();
+
+    # If the error is due to the wrong region, then we will get
+    # back a block of XML with the details
+    if ( $response->content_type eq 'application/xml' and $response->content ) {
+
+        my $error_hash = $self->_xpc_of_content( $response->content );
+
+        if ( $error_hash->{'Code'} eq 'PermanentRedirect' and $error_hash->{'Endpoint'} ) {
+
+            # Don't recurse through multiple redirects
+            return if $called_from_redirect;
+
+            # With a permanent redirect error, they are telling us the explicit
+            # host to use.  The endpoint will be in the form of bucket.host
+            my $host = $error_hash->{'Endpoint'};
+
+            # Remove the bucket name from the front of the host name
+            # All the requests will need to be of the form https://host/bucket
+            $host =~ s/^$bucket\.//;
+            $self->host($host);
+
+            # We will need to call ourselves again in order to trigger the
+            # AuthorizationHeaderMalformed error in order to get the region
+            return $self->adjust_region( $bucket, 1 );
+        }
+
+        if ( $error_hash->{'Code'} eq 'AuthorizationHeaderMalformed' and $error_hash->{'Region'} ) {
+
+            # Set the signer to use the correct reader evermore
+            $self->{'signer'}{'endpoint'} = $error_hash->{'Region'};
+
+            # Only change the host if we haven't been called as a redirect where an exact host has been given
+            $self->host( 's3-' . $error_hash->{'Region'} . '.amazonaws.com' ) unless $called_from_redirect;
+
+            return 1;
+        }
+
+    }
+
+    # Some other error
+    $self->_remember_errors($response->content, 1);
+    return;
+}
 
 ########################################################################
 sub _do_http {
@@ -748,6 +809,9 @@ sub _remember_errors {
   return $FALSE;
 } ## end sub _remember_errors
 
+#
+# Deprecated - this adds a header for the old V2 auth signatures
+#
 ########################################################################
 sub _add_auth_header {
 ########################################################################
@@ -911,7 +975,7 @@ sub _urlencode {
 ########################################################################
   my ( $self, $unencoded ) = @_;
 
-  return uri_escape_utf8( $unencoded, '^A-Za-z0-9_-' );
+  return uri_escape_utf8($unencoded, '^A-Za-z0-9\-\._~\x2f');
 } ## end sub _urlencode
 
 1;
@@ -1185,6 +1249,10 @@ The default buffer size when reading or writing files.
 default: 4096
 
 =back
+
+=head2 adjust_region
+
+Sets the region for the signing object to be appropriate for the bucket
 
 =head2 buckets
 
