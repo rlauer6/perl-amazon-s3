@@ -144,9 +144,38 @@ sub new {
   $ua->timeout( $self->timeout );
   $ua->env_proxy;
   $self->ua($ua);
+  $self->turn_on_special_retry();
 
   return $self;
 } ## end sub new
+
+sub turn_on_special_retry {
+    my $self = shift;
+
+    if ($self->retry) {
+
+        # In the field we are seeing issue of Amazon returning with a 400 code
+        # in the case of timeout.  From AWS S3 logs:
+        #  REST.PUT.PART Backups/2017-05-04/<account>.tar.gz "PUT /Backups<path>?partNumber=27&uploadId=<id> -
+        #  HTTP/1.1" 400 RequestTimeout 360 20971520 20478 - "-" "libwww-perl/6.15"
+        my $http_codes_hr = $self->ua->codes_to_determinate();
+        $http_codes_hr->{400} = 1;
+    }
+}
+
+sub turn_off_special_retry {
+    my $self = shift;
+
+    if ($self->retry) {
+
+        # In the field we are seeing issue of Amazon returning with a 400 code
+        # in the case of timeout.  From AWS S3 logs:
+        #  REST.PUT.PART Backups/2017-05-04/<account>.tar.gz "PUT /Backups<path>?partNumber=27&uploadId=<id> -
+        #  HTTP/1.1" 400 RequestTimeout 360 20971520 20478 - "-" "libwww-perl/6.15"
+        my $http_codes_hr = $self->ua->codes_to_determinate();
+        delete $http_codes_hr->{400};
+    }
+}
 
 ########################################################################
 sub region {
@@ -589,7 +618,12 @@ sub adjust_region {
     my $request = HTTP::Request->new('GET', 'https://' . $bucket . '.' . $self->host );
     $self->{'signer'}->sign( $request );
 
+    # We have to turn off our special retry since this will deliberately trigger that code
+    $self->turn_off_special_retry();
+
     my $response = $self->_do_http($request);
+
+    $self->turn_on_special_retry();
 
     # If No error, then nothing to do
     return 1 if $response->is_success();
@@ -1249,6 +1283,14 @@ The default buffer size when reading or writing files.
 default: 4096
 
 =back
+
+=head2 turn_on_special_retry
+
+Called to add extry retry codes if retry has been set
+
+=head2 turn_off_special_retry
+
+Called to turn off special retry codes when we are deliberately triggering them
 
 =head2 adjust_region
 
