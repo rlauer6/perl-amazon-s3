@@ -801,12 +801,22 @@ sub _xpc_of_content {
 ########################################################################
   my ( $self, $src, $keep_root ) = @_;
 
-  return XMLin(
-    $src,
-    'SuppressEmpty' => $EMPTY,
-    'ForceArray'    => ['Contents'],
-    'KeepRoot'      => $keep_root
-  );
+  my $xml_hr;
+
+  eval {
+    $xml_hr = XMLin(
+      $src,
+      'SuppressEmpty' => $EMPTY,
+      'ForceArray'    => ['Contents'],
+      'KeepRoot'      => $keep_root
+    );
+  };
+
+  if ($@) {
+    confess "Error parsing $src:  $@";
+  }
+
+  return $xml_hr;
 } ## end sub _xpc_of_content
 
 # returns 1 if errors were found
