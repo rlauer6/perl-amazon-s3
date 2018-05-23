@@ -621,7 +621,18 @@ sub adjust_region {
     # We have to turn off our special retry since this will deliberately trigger that code
     $self->turn_off_special_retry();
 
+    # If the bucket name has a period in it, the certificate validation
+    # will fail since it will expect a certificate for a subdomain.
+    # Setting it to verify against the expected host guards against
+    # that while still being secure since we will have verified
+    # the response as coming from the expected server.
+    $self->ua->ssl_opts( SSL_verifycn_name => $self->host );
+
     my $response = $self->_do_http($request);
+
+    # Turn this off, since all other requests have the bucket after
+    # the host in the URL, and the host may change depending on the region
+    $self->ua->ssl_opts( SSL_verifycn_name => undef );
 
     $self->turn_on_special_retry();
 
