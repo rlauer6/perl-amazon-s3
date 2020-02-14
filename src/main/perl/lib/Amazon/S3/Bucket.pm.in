@@ -392,8 +392,9 @@ sub get_key {
       ? file_md5_hex($filename)
       : md5_hex( $return->{value} );
 
+    # Some S3-compatible providers return an all-caps MD5 value in the etag so it should be lc'd for comparison.
     croak "Computed and Response MD5's do not match:  $md5 : $etag"
-      if $md5 ne $etag;
+      if $md5 ne lc $etag;
   } ## end if ( $method eq 'GET' )
 
   foreach my $header ( $response->headers->header_field_names ) {
