@@ -518,22 +518,27 @@ sub _validate_acl_short {
   return;
 } ## end sub _validate_acl_short
 
-# EU buckets must be accessed via their DNS name. This routine figures out if
-# a given bucket name can be safely used as a DNS name.
-########################################################################
-sub _is_dns_bucket {
-########################################################################
+# Determine if a bucket can used as subdomain for the host
+# Specifying the bucket in the URL path is being deprecated
+# So, if the bucket name is suitable, we need to put it
+# as a subdomain to the host, instead. Currently buckets with
+# periods in their names cannot be handled in that manner
+# due to SSL certificate issues, they will have to remain in
+# the url path instead
+sub _can_bucket_be_subdomain {
   my ($bucketname) = @_;
 
   if ( length $bucketname > $MAX_BUCKET_NAME_LENGTH - 1 ) {
     return $FALSE;
   } ## end if ( length $bucketname...)
 
-  if ( length $bucketname < $MIN_BUCKET_NAME_LENGTH ) {
+  if (length $bucketname < 1) {
     return $FALSE;
-  } ## end if ( length $bucketname...)
+  }
 
-  return $bucketname =~ /[.]/xsm ? $FALSE : $TRUE;
+  return $FALSE unless $bucketname =~ m{^[a-z][a-z0-9-]*$};
+  return $FALSE unless $bucketname =~ m{[a-z0-9]$};
+  return $TRUE;
 } ## end sub _is_dns_bucket
 
 # make the HTTP::Request object
@@ -565,6 +570,9 @@ sub _make_request {
 
   $path =~ s/\A\///xsm;
   my $url = "$protocol://$host/$path";
+  if ($path =~ m{^([^/?]+)(.*)} && _can_bucket_be_subdomain($1)) {
+    $url = "$protocol://$1.$host$2";
+  }
 
   my $request = HTTP::Request->new( $method, $url, $http_headers );
 
