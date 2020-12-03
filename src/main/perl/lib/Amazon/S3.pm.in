@@ -683,6 +683,22 @@ sub adjust_region {
             return 1;
         }
 
+        if ( $error_hash->{'Code'} eq 'IllegalLocationConstraintException' ) {
+
+            # This is hackish; but in this case the region name only appears in the message
+            if ( $error_hash->{'Message'} =~ /The (\S+) location/ ) {
+                my $region = $1;
+
+                # Correct the region for the signer
+                $self->{'signer'}{'endpoint'} = $region;
+
+                # Set the proper host for the region
+                $self->host( 's3.' . $region . '.amazonaws.com' );
+
+                return 1;
+            }
+        }
+
     }
 
     # Some other error
