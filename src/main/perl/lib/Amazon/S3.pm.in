@@ -353,7 +353,7 @@ sub list_bucket {
     next_marker  => $r->{$next_marker} // $EMPTY,
     max_keys     => $r->{MaxKeys},
     is_truncated => (
-      scalar $r->{IsTruncated} eq 'true'
+      ( defined $r->{IsTruncated} && scalar $r->{IsTruncated} eq 'true' )
       ? $TRUE
       : $FALSE
     ),
