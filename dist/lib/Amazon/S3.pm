@@ -10,12 +10,13 @@ use Amazon::S3::Bucket;
 use LWP::UserAgent::Determined;
 use URI::Escape qw(uri_escape_utf8);
 use XML::Simple;
+use Data::Dumper;
 
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(aws_access_key_id aws_secret_access_key token secure ua err errstr timeout retry host)
 );
-our $VERSION = '0.47';
+our $VERSION = '0.48';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -271,11 +272,16 @@ sub _make_request {
       unless exists $headers->{Authorization};
     my $protocol = $self->secure ? 'https' : 'http';
     my $host     = $self->host;
-    my $url      = "$protocol://$host/$path";
+    my $url;
+
     if ($path =~ m{^([^/?]+)(.*)} && _is_dns_bucket($1)) {
         $url = "$protocol://$1.$host$2";
+      }
+    else {
+      $path =~s/^\///;
+      $url = "$protocol://$host/$path";
     }
-
+        
     my $request = HTTP::Request->new($method, $url, $http_headers);
     $request->content($data);
 
@@ -300,6 +306,7 @@ sub _send_request {
     }
 
     my $response = $self->_do_http($request);
+    
     my $content  = $response->content;
 
     return $content unless $response->content_type eq 'application/xml';
@@ -444,6 +451,10 @@ sub _merge_meta {
 # only used by query string authentication.
 sub _canonical_string {
     my ($self, $method, $path, $headers, $expires) = @_;
+  
+    # initial / meant to force host/bucket-name instead of DNS based name
+    $path =~s/^\///;
+  
     my %interesting_headers = ();
     while (my ($key, $value) = each %$headers) {
         my $lk = lc $key;
@@ -680,6 +691,10 @@ retries.
 
 Defines the S3 host endpoint to use. Defaults to
 's3.amazonaws.com'.
+
+Note that requests are made to domain buckets when possible.  You can
+prevent that behavior if either the bucket name does conform to DNS
+bucket naming conventions or you preface the bucket name with '/'.
 
 =back
 

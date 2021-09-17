@@ -1,4 +1,8 @@
 Revision history for Perl module Amazon::S3:
+0.48    Sep 17 2021
+    - remove leading '/' from bucket name
+    - modify tests for not s3.amazonaws.com hosts (e.g. minio)
+  
 0.47    Feb 4 2019
     - update dependencies (XML::LibXML)
 

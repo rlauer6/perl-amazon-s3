@@ -18,20 +18,23 @@ use_ok('Amazon::S3::Bucket');
 
 # this synopsis is presented as a test file
 
-# TO DO: Need host method tests, default is
-# s3.amazonaws.com, can change host, host is changed to
-# something other than s3.amazonaws.com.
-
 use vars qw/$OWNER_ID $OWNER_DISPLAYNAME/;
 
 my $aws_access_key_id     = $ENV{'AWS_ACCESS_KEY_ID'};
 my $aws_secret_access_key = $ENV{'AWS_ACCESS_KEY_SECRET'};
+my $host = $ENV{S3_HOST} || 's3.amazonaws.com';
+
+my $skip_acls = exists $ENV{MINIO} || exists $ENV{SKIP_ACL_TESTS};
+
+my $no_region_constraint = exists $ENV{MINIO} || exists $ENV{SKIP_REGION_CONSTRAINT_TEST};
 
 my $s3 =
   Amazon::S3->new(
                   {
                    aws_access_key_id     => $aws_access_key_id,
-                   aws_secret_access_key => $aws_secret_access_key
+                   aws_secret_access_key => $aws_secret_access_key,
+                   token => $ENV{AWS_SESSION_TOKEN},
+                   host => $host
                   }
   );
 
@@ -47,7 +50,9 @@ for my $location (undef, 'EU') {
     # make sure it's a valid hostname for EU testing
     # we use the same bucket name for both in order to force one or the other to
     # have stale DNS
-    my $bucketname = 'net-amazon-s3-test-' . lc $aws_access_key_id;
+    my $bucketname = '/net-amazon-s3-test-' . lc $aws_access_key_id;
+    my $bucketname_raw = 'net-amazon-s3-test-' . lc $aws_access_key_id;
+    
     my $bucket_obj =
       $s3->add_bucket(
                       {
@@ -58,12 +63,21 @@ for my $location (undef, 'EU') {
       )
       or die $s3->err . ": " . $s3->errstr;
     is(ref $bucket_obj, "Amazon::S3::Bucket");
-    is($bucket_obj->get_location_constraint, $location);
 
-    like_acl_allusers_read($bucket_obj);
-    ok($bucket_obj->set_acl({acl_short => 'private'}));
-    unlike_acl_allusers_read($bucket_obj);
-
+  SKIP: {
+      skip "No region constraints", 1 if $no_region_constraint;
+      is($bucket_obj->get_location_constraint, $location);
+    }
+    
+  SKIP: {
+     
+      skip "ACLs only for Amazon S3", 3 if $skip_acls;
+    
+      like_acl_allusers_read($bucket_obj);
+      ok($bucket_obj->set_acl({acl_short => 'private'}));
+      unlike_acl_allusers_read($bucket_obj);
+    }
+    
     # another way to get a bucket object (does no network I/O,
     # assumes it already exists).  Read Amazon::S3::Bucket.
     $bucket_obj = $s3->bucket($bucketname);
@@ -73,7 +87,7 @@ for my $location (undef, 'EU') {
     # note prefix, marker, max_keys options can be passed in
     $response = $bucket_obj->list
       or die $s3->err . ": " . $s3->errstr;
-    is($response->{bucket},       $bucketname);
+    is($response->{bucket},       $bucketname =~s/^\///r);
     is($response->{prefix},       '');
     is($response->{marker},       '');
     is($response->{max_keys},     1_000);
@@ -98,57 +112,65 @@ for my $location (undef, 'EU') {
                              }
         );
 
-        is_request_response_code("http://$bucketname.s3.amazonaws.com/$keyname",
+      SKIP: {
+          
+          skip "ACLs only for Amazon S3", 11 if $skip_acls;
+
+          is_request_response_code("http://$host/$bucketname/$keyname",
                                  200, "can access the publicly readable key");
+          
+          like_acl_allusers_read($bucket_obj, $keyname);
+          
+          ok($bucket_obj->set_acl({key => $keyname, acl_short => 'private'}));
 
-        like_acl_allusers_read($bucket_obj, $keyname);
+          is_request_response_code("http://$host/$bucketname/$keyname",
+                                   403, "cannot access the private key");
 
-        ok($bucket_obj->set_acl({key => $keyname, acl_short => 'private'}));
+          unlike_acl_allusers_read($bucket_obj, $keyname);
 
-        is_request_response_code("http://$bucketname.s3.amazonaws.com/$keyname",
-                                 403, "cannot access the private key");
+          ok(
+             $bucket_obj->set_acl(
+                                  {
+                                   key     => $keyname,
+                                   acl_xml => acl_xml_from_acl_short('public-read')
+                                  }
+                                 )
+            );
 
-        unlike_acl_allusers_read($bucket_obj, $keyname);
+          is_request_response_code("http://$host/$bucketname/$keyname",
+                                   200,
+                                   "can access the publicly readable key after acl_xml set");
 
-        ok(
-            $bucket_obj->set_acl(
-                               {
-                                key     => $keyname,
-                                acl_xml => acl_xml_from_acl_short('public-read')
-                               }
-            )
-        );
+          like_acl_allusers_read($bucket_obj, $keyname);
 
-        is_request_response_code("http://$bucketname.s3.amazonaws.com/$keyname",
-                      200,
-                      "can access the publicly readable key after acl_xml set");
+          ok(
+             $bucket_obj->set_acl(
+                                  {
+                                   key     => $keyname,
+                                   acl_xml => acl_xml_from_acl_short('private')
+                                  }
+                                 )
+            );
 
-        like_acl_allusers_read($bucket_obj, $keyname);
+          is_request_response_code(
+                                   "http://$host/$bucketname/$keyname",
+                                   #                               "http://$bucketname.s3.amazonaws.com/$keyname",
+                                   403,
+                                   "cannot access the private key after acl_xml set"
+                                  );
 
-        ok(
-            $bucket_obj->set_acl(
-                                 {
-                                  key     => $keyname,
-                                  acl_xml => acl_xml_from_acl_short('private')
-                                 }
-            )
-        );
+          unlike_acl_allusers_read($bucket_obj, $keyname);
 
-        is_request_response_code(
-                               "http://$bucketname.s3.amazonaws.com/$keyname",
-                               403,
-                               "cannot access the private key after acl_xml set"
-        );
-
-        unlike_acl_allusers_read($bucket_obj, $keyname);
-
-    }
-
+        }
+      }
+    
     {
 
         # Create a private key, then make it publicly readable with a short
         # acl.  Delete it at the end so we're back to having a single key in
         # the bucket.
+    SKIP: {
+        skip "ACLs only for Amazon S3", 5 if $skip_acls;
 
         my $keyname2 = 'testing2.txt';
         my $value    = 'T2';
@@ -163,7 +185,7 @@ for my $location (undef, 'EU') {
         );
 
         is_request_response_code(
-                                "http://$bucketname.s3.amazonaws.com/$keyname2",
+                                "http://$host/$bucketname/$keyname2",
                                 403, "cannot access the private key");
 
         unlike_acl_allusers_read($bucket_obj, $keyname2);
@@ -175,19 +197,20 @@ for my $location (undef, 'EU') {
         );
 
         is_request_response_code(
-                                "http://$bucketname.s3.amazonaws.com/$keyname2",
+                                "http://$host/$bucketname/$keyname2",
                                 200, "can access the publicly readable key");
 
         like_acl_allusers_read($bucket_obj, $keyname2);
 
         $bucket_obj->delete_key($keyname2);
 
+      }
     }
 
     # list keys in the bucket
     $response = $bucket_obj->list
       or die $s3->err . ": " . $s3->errstr;
-    is($response->{bucket},       $bucketname);
+    is($response->{bucket},       $bucketname =~s/^\///r);
     is($response->{prefix},       '');
     is($response->{marker},       '');
     is($response->{max_keys},     1_000);
@@ -252,6 +275,9 @@ for my $location (undef, 'EU') {
     # note prefix, marker, max_keys options can be passed in
     $response = $bucket_obj->list
       or die $s3->err . ": " . $s3->errstr;
+
+    $bucketname =~s/^\///;
+    
     is($response->{bucket},       $bucketname);
     is($response->{prefix},       '');
     is($response->{marker},       '');
