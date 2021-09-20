@@ -402,9 +402,14 @@ sub _remember_errors {
 
     my $r = ref $src ? $src : $self->_xpc_of_content($src, $keep_root);
 
+    # apparently buckets() does not keep_root
     if ($r->{Error}) {
-      $self->err($r->{Error}->{Code});
-      $self->errstr($r->{Error}->{Message});
+      $r = $r->{Error};
+    }
+    
+    if ($r->{Code}) {
+      $self->err($r->{Code});
+      $self->errstr($r->{Message});
       return 1;
     }
     
