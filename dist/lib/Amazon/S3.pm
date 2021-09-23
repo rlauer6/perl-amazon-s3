@@ -506,67 +506,92 @@ sub _merge_meta {
     return $http_header;
 }
 
-# generate a canonical string for the given parameters.  expires is optional and is
-# only used by query string authentication.
-sub _canonical_string {
-    my ($self, $method, $path, $headers, $expires) = @_;
-  
-    # initial / meant to force host/bucket-name instead of DNS based name
-    $path =~s/^\///;
-  
-    my %interesting_headers = ();
-    while (my ($key, $value) = each %$headers) {
-        my $lk = lc $key;
-        if (   $lk eq 'content-md5'
-            or $lk eq 'content-type'
-            or $lk eq 'date'
-            or $lk =~ /^$AMAZON_HEADER_PREFIX/)
-        {
-            $interesting_headers{$lk} = $self->_trim($value);
-        }
+#    # don't include anything after the first ? in the resource...
+#    $path =~ /^([^?]*)/;
+#    $buf .= "/$1";
+#
+#    # ...unless there any parameters we're interested in...
+#    if ( $path =~ /[&?](acl|torrent|location|uploads|delete)($|=|&)/ ) {
+#        $buf .= "?$1";
+#    } elsif ( my %query_params = URI->new($path)->query_form ){
+#        #see if the remaining parsed query string provides us with any query string or upload id
+#        if($query_params{partNumber} && $query_params{uploadId}){
+#            #re-evaluate query string, the order of the params is important for request signing, so we can't depend on URI to do the right thing
+#            $buf .= sprintf("?partNumber=%s&uploadId=%s", $query_params{partNumber}, $query_params{uploadId});
+#        }
+#        elsif($query_params{uploadId}){
+#            $buf .= sprintf("?uploadId=%s",$query_params{uploadId});
+#        }
+#    }
+
+sub _get_signature {
+    my ($self, $method, $path, $headers, $expires, $hashed_payload) = @_;
+
+    my $path_debug = "RAW PATH: $path\n";
+
+    my $uri = URI->new(uri_unescape($path));
+    $path_debug .= "URI PATH: " . $uri->path . "\n";
+
+    my ($bucket_name, $object_key_name) = $path =~ /^([^\/]*)([^?]+)$/;
+    my $canonical_uri = uri_unescape($object_key_name);
+    utf8::decode($canonical_uri);
+    $path_debug .= "DECODED URI: $canonical_uri" . "\n";
+
+    $canonical_uri = $self->_urlencode($canonical_uri, '/');
+
+    $self->_path_debug($path_debug);
+
+    my $canonical_query_string = "";
+    my %parameters = $uri->query_form;
+    foreach my $key (sort keys %parameters) {
+        $canonical_query_string .= '&' if $canonical_query_string;
+        $canonical_query_string .= $self->_urlencode($key);
+        $canonical_query_string .= '=';
+        $canonical_query_string .= $self->_urlencode($parameters{$key});
     }
 
-    # these keys get empty strings if they don't exist
-    $interesting_headers{'content-type'} ||= '';
-    $interesting_headers{'content-md5'}  ||= '';
+    my $canonical_headers = "";
+    my $signed_headers;
+    foreach my $field_name (sort { lc($a) cmp lc($b) } $headers->header_field_names) {
+        $canonical_headers .= lc($field_name);
+        $canonical_headers .= ':';
+        $canonical_headers .= $self->_trim( $headers->header($field_name) );
+        $canonical_headers .= "\n";
 
-    # just in case someone used this.  it's not necessary in this lib.
-    $interesting_headers{'date'} = ''
-      if $interesting_headers{'x-amz-date'};
-
-    # if you're using expires for query string auth, then it trumps date
-    # (and x-amz-date)
-    $interesting_headers{'date'} = $expires if $expires;
-
-    my $buf = "$method\n";
-    foreach my $key (sort keys %interesting_headers) {
-        if ($key =~ /^$AMAZON_HEADER_PREFIX/) {
-            $buf .= "$key:$interesting_headers{$key}\n";
-        }
-        else {
-            $buf .= "$interesting_headers{$key}\n";
-        }
+        $signed_headers .= ';' if $signed_headers;
+        $signed_headers .= lc($field_name);
     }
 
-    # don't include anything after the first ? in the resource...
-    $path =~ /^([^?]*)/;
-    $buf .= "/$1";
+    # From: https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+    #
+    # HTTPMethod is one of the HTTP methods, for example GET, PUT, HEAD, and DELETE
+    my $canonical_request = "$method\n";
+    # CanonicalURI is the URI-encoded version of the absolute path component of the URI
+    $canonical_request .= "$canonical_uri\n";
+    # CanonicalQueryString specifies the URI-encoded query string parameters.
+    $canonical_request .= "$canonical_query_string\n";
+    # CanonicalHeaders is a list of request headers with their values.
+    $canonical_request .= "$canonical_headers\n";
+    # SignedHeaders is an alphabetically sorted,
+    # semicolon-separated list of lowercase request header names.
+    $canonical_request .= "$signed_headers\n";
+    $canonical_request .= $hashed_payload;
+    $self->_canonical_request($canonical_request);
 
-    # ...unless there any parameters we're interested in...
-    if ( $path =~ /[&?](acl|torrent|location|uploads|delete)($|=|&)/ ) {
-        $buf .= "?$1";
-    } elsif ( my %query_params = URI->new($path)->query_form ){
-        #see if the remaining parsed query string provides us with any query string or upload id
-        if($query_params{partNumber} && $query_params{uploadId}){
-            #re-evaluate query string, the order of the params is important for request signing, so we can't depend on URI to do the right thing
-            $buf .= sprintf("?partNumber=%s&uploadId=%s", $query_params{partNumber}, $query_params{uploadId});
-        }
-        elsif($query_params{uploadId}){
-            $buf .= sprintf("?uploadId=%s",$query_params{uploadId});
-        }
-    }
+    my $string_to_sign = "AWS4-HMAC-SHA256\n";
+    $string_to_sign .= $self->_req_date->ymd("") . 'T' . $self->_req_date->hms("") . "Z\n";
+    # Scope binds the resulting signature to a specific date, an AWS region, and a service.
+    $string_to_sign .= $self->_req_date->ymd("") . '/' . $self->region . "/s3/aws4_request\n";
+    $string_to_sign .= sha256_hex($canonical_request);
+    $self->_string_to_sign($string_to_sign);
 
-    return $buf;
+    my $date_key = hmac_sha256($self->_req_date->ymd(""), 'AWS4' . $self->aws_secret_access_key);
+    my $date_region_key = hmac_sha256($self->region, $date_key);
+    my $date_region_service_key = hmac_sha256('s3', $date_region_key);
+    my $signing_key = hmac_sha256('aws4_request', $date_region_service_key);
+    my $signature = hmac_sha256_hex($string_to_sign, $signing_key);
+
+    return ($signature, $signed_headers);
 }
 
 sub _trim {
