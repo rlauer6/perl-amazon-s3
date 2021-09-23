@@ -601,24 +601,10 @@ sub _trim {
     return $value;
 }
 
-# finds the hmac-sha1 hash of the canonical string and the aws secret access key and then
-# base64 encodes the result (optionally urlencoding after that).
-sub _encode {
-    my ($self, $aws_secret_access_key, $str, $urlencode) = @_;
-    my $hmac = Digest::HMAC_SHA1->new($aws_secret_access_key);
-    $hmac->add($str);
-    my $b64 = encode_base64($hmac->digest, '');
-    if ($urlencode) {
-        return $self->_urlencode($b64);
-    }
-    else {
-        return $b64;
-    }
-}
-
 sub _urlencode {
-    my ($self, $unencoded) = @_;
-    return uri_escape_utf8($unencoded, '^A-Za-z0-9_-');
+    my ($self, $unencoded, $noencode) = @_;
+    $noencode //= '';
+    return  uri_escape_utf8($unencoded, "^A-Za-z0-9-._~" . $noencode);
 }
 
 1;
