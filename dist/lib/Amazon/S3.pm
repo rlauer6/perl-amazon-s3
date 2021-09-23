@@ -448,22 +448,45 @@ sub _remember_errors {
 }
 
 sub _add_auth_header {
-  my ($self, $headers, $method, $path) = @_;
-  my $aws_access_key_id     = $self->aws_access_key_id;
-  my $aws_secret_access_key = $self->aws_secret_access_key;
-  
-  if (not $headers->header('Date')) {
-    $headers->header(Date => time2str(time));
-  }
-  
-  if ( $self->token ) {
-    $headers->header($AMAZON_HEADER_PREFIX . 'security-token', $self->token);
-  }
-  
-  my $canonical_string = $self->_canonical_string($method, $path, $headers);
-  my $encoded_canonical = $self->_encode($aws_secret_access_key, $canonical_string);
-  $headers->header( Authorization => "AWS $aws_access_key_id:$encoded_canonical");
+    my ($self, $headers, $method, $path, $hashed_payload) = @_;
+    my $aws_access_key_id     = $self->aws_access_key_id;
+    my $aws_secret_access_key = $self->aws_secret_access_key;
+
+    if ( $self->token ) { #TODO check AWS reference
+        $headers->header($AMAZON_HEADER_PREFIX . 'security-token', $self->token);
+    }
+
+    my $date = $self->_req_date->ymd("");
+    my $region = $self->region;
+    my ($signing_key, $signed_headers) = $self->_get_signature($method, $path, $headers, undef, $hashed_payload);
+
+    $headers->header( Authorization =>
+        # The algorithm that was used to calculate the signature.
+        # You must provide this value when you use AWS Signature Version 4 for authentication.
+        # The string specifies AWS Signature Version 4 (AWS4) and the signing algorithm (HMAC-SHA256).
+        "AWS4-HMAC-SHA256"
+        # * There is space between the first two components, AWS4-HMAC-SHA256 and Credential
+        # * The subsequent components, Credential, SignedHeaders, and Signature are separated by a comma.
+        . " "
+        # Credential:
+        # Your access key ID and the scope information,
+        # which includes the date, region, and service that were used to calculate the signature.
+        # This string has the following form:
+        # <your-access-key-id>/<date>/<aws-region>/<aws-service>/aws4_request
+        # Where:
+        # * <date> value is specified using YYYYMMDD format.
+        # * <aws-service> value is s3 when sending request to Amazon S3.
+        . "Credential=$aws_access_key_id/$date/$region/s3/aws4_request,"
+        # SignedHeaders:
+        # A semicolon-separated list of request headers that you used to compute Signature.
+        # The list includes header names only, and the header names must be in lowercase.
+        . "SignedHeaders=$signed_headers,"
+        # Signature:
+        # The 256-bit signature expressed as 64 lowercase hexadecimal characters.
+        . "Signature=$signing_key"
+    );
 }
+
 
 # generates an HTTP::Headers objects given one hash that represents http
 # headers to set and another hash that represents an object's metadata.
