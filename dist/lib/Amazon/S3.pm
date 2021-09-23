@@ -274,32 +274,52 @@ sub _make_request {
     my ($self, $method, $path, $headers, $data, $metadata) = @_;
     croak 'must specify method' unless $method;
     croak 'must specify path'   unless defined $path;
-    $headers ||= {};
-    $data = '' if not defined $data;
-    $metadata ||= {};
-    my $http_headers = $self->_merge_meta($headers, $metadata);
 
-    $self->_add_auth_header($http_headers, $method, $path)
-      unless exists $headers->{Authorization};
+    $self->_req_date( DateTime->now(time_zone => 'UTC') ); # TODO move to new
+
+    $headers  ||= {};
+    $data     //= '';
+    $metadata ||= {};
+
     my $protocol = $self->secure ? 'https' : 'http';
     my $host     = $self->host;
     my $url;
 
     if ($path =~ m{^([^/?]+)(.*)} && _is_dns_bucket($1)) {
-        $url = "$protocol://$1.$host$2";
-      }
+        $host = "$1.$host";
+        $url = "$protocol://$host$2";
+    }
     else {
-      $path =~s/^\///;
-      $url = "$protocol://$host/$path";
+        $path =~s/^\///;
+        $url = "$protocol://$host/$path";
     }
         
-    my $request = HTTP::Request->new($method, $url, $http_headers);
-    $request->content($data);
+    my $hashed_payload = 'UNSIGNED-PAYLOAD';
+    my $content;
+    if ($data) {
+        if (ref($data)) {
+            my $sha = Digest::SHA->new(256);
+            $sha->addfile($data->{filename}, 'b');
+            $hashed_payload = $sha->hexdigest;
+            $content = $data->{sub};
+        }
+        else {
+            $hashed_payload = sha256_hex($data);
+            $content = $data;
+        }
+    }
 
-    # my $req_as = $request->as_string;
-    # $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
-    # $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
-    # warn $req_as;
+    my $http_headers = $self->_merge_meta($headers, $metadata);
+    $http_headers->{host} = $host;
+    $http_headers->{'x-amz-date'} = $self->_req_date->ymd("") . 'T' . $self->_req_date->hms("") . 'Z';
+    $http_headers->{'x-amz-content-sha256'} = $hashed_payload;
+
+    if(! exists $headers->{Authorization}) {
+        $self->_add_auth_header($http_headers, $method, $path, $hashed_payload);
+    }
+
+    my $request = HTTP::Request->new($method, $url, $http_headers);
+    $request->content($content);
 
     return $request;
 }
