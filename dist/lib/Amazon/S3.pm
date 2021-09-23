@@ -629,8 +629,12 @@ managing Amazon S3 buckets and keys.
   my $aws_access_key_id     = "Fill me in!";
   my $aws_secret_access_key = "Fill me in too!";
   
+  # defaults to US East (N. Virginia)
+  my $region = "us-east-1";
+
   my $s3 = Amazon::S3->new(
-      {   aws_access_key_id     => $aws_access_key_id,
+      {   region                => $region,
+          aws_access_key_id     => $aws_access_key_id,
           aws_secret_access_key => $aws_secret_access_key,
           retry                 => 1
       }
@@ -713,6 +717,14 @@ portability.
 Create a new S3 client object. Takes some arguments:
 
 =over
+
+=item region
+
+This is the region your buckets are in.
+Defaults to us-east-1
+
+See a list of regions at:
+https://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
 
 =item aws_access_key_id 
 
