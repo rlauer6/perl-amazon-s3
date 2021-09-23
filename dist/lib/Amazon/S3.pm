@@ -3,20 +3,25 @@ use strict;
 use warnings;
 
 use Carp;
-use Digest::HMAC_SHA1;
-use HTTP::Date;
+use Digest::SHA qw(sha256_hex hmac_sha256 hmac_sha256_hex);
+use DateTime;
 use MIME::Base64 qw(encode_base64);
 use Amazon::S3::Bucket;
 use LWP::UserAgent::Determined;
-use URI::Escape qw(uri_escape_utf8);
+use URI::Escape qw(uri_escape_utf8 uri_unescape);
 use XML::Simple;
 use Data::Dumper;
+use URI;
 
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
-    qw(aws_access_key_id aws_secret_access_key token secure ua err errstr timeout retry host)
+    qw(
+        region aws_access_key_id aws_secret_access_key token
+        secure ua err errstr timeout retry host
+        _req_date _canonical_request _string_to_sign _path_debug
+    )
 );
-our $VERSION = '0.48';
+our $VERSION = '0.48'; #TODO
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
@@ -31,7 +36,12 @@ sub new {
 
     $self->secure(0)                if not defined $self->secure;
     $self->timeout(30)              if not defined $self->timeout;
-    $self->host('s3.amazonaws.com') if not defined $self->host;
+
+    # default to US East (N. Virginia) region
+    $self->region('us-east-1') unless $self->region;
+
+    my $region = $self->region; #TODO
+    $self->host("s3.amazonaws.com") if not defined $self->host;
 
     my $ua;
     if ($self->retry) {
@@ -181,6 +191,7 @@ sub list_bucket {
         my $strip_delim = qr/$conf->{delimiter}$/;
 
         foreach my $node ($r->{CommonPrefixes}) {
+# TODO TODO TODO
             if ( ref($node) ne 'ARRAY') {
              $node = [ $node ];
             }
