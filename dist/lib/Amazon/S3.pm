@@ -787,11 +787,33 @@ retries.
 =item host
 
 Defines the S3 host endpoint to use. Defaults to
-'s3.amazonaws.com'.
+'s3.us-east-1.amazonaws.com'
+(or 's3.amazonaws.com' if C<allow_legacy_global_endpoint> is true. See below).
 
 Note that requests are made to domain buckets when possible.  You can
 prevent that behavior if either the bucket name does conform to DNS
 bucket naming conventions or you preface the bucket name with '/'.
+
+=item allow_legacy_global_endpoint
+
+Accordind to this document:
+L<Virtual hosting of buckets|https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#VirtualHostingBackwardsCompatibility>
+
+  Some Regions support legacy endpoints.
+  Although you might see legacy endpoints in your logs,
+  we recommend that you always use the standard endpoint syntax
+  to access your buckets.
+
+Set C<allow_legacy_global_endpoint> to C<true> if you don't want
+the constructor to check if region in the C<host> is missed and
+automatically insert C<region> into C<host>.
+
+When it set to C<false> (default) constructor try to recognize if
+region in C<host> is missed between B<'s3'>
+(in fact 's3', 's3-anythig-not-dot' and optional 'dualstack')
+and B<'amazonaws.com'> then it inserts content of B<region> there.
+
+B<WARNING! This feature changes default behaviour>
 
 =back
 
