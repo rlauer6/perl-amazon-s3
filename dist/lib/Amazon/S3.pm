@@ -18,7 +18,7 @@ __PACKAGE__->mk_accessors(
     qw(
         region aws_access_key_id aws_secret_access_key token
         secure ua err errstr timeout retry host
-        allow_legacy_global_endpoint
+        allow_legacy_global_endpoint allow_legacy_path_based_bucket
         _req_date _canonical_request _string_to_sign _path_debug
     )
 );
@@ -300,7 +300,9 @@ sub _make_request {
     my $host     = $self->host;
     my $url;
 
-    if ($path =~ m{^([^/?]+)(.*)} && _is_dns_bucket($1)) {
+    if (    ! $self->allow_legacy_path_based_bucket
+            && $path =~ m{^([^/?]+)(.*)}
+            && _is_dns_bucket($1)) {
         $host = "$1.$host";
         $url = "$protocol://$host$2";
     }
