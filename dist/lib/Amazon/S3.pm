@@ -18,6 +18,7 @@ __PACKAGE__->mk_accessors(
     qw(
         region aws_access_key_id aws_secret_access_key token
         secure ua err errstr timeout retry host
+        allow_legacy_global_endpoint
         _req_date _canonical_request _string_to_sign _path_debug
     )
 );
@@ -26,6 +27,10 @@ our $VERSION = '0.49';
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
 my $KEEP_ALIVE_CACHESIZE = 10;
+my $LGE_CHECK_REGEXP     = qr/ ( s3 [^.]* [.]         # s3., s3-fips., etc
+                                 (?:dualstack[.])? )  # optional dualstack.
+                               ( amazonaws[.]com \z ) # amazonaws at the end
+                            /ixms;
 
 sub new {
     my $class = shift;
@@ -40,8 +45,18 @@ sub new {
     # default to US East (N. Virginia) region
     $self->region('us-east-1') unless $self->region;
 
-    my $region = $self->region; #TODO
-    $self->host("s3.amazonaws.com") if not defined $self->host;
+    my $region = $self->region;
+    my $host   = $self->host;
+    if (! defined $host) {
+        $host = "s3.amazonaws.com";
+        $self->host($host);
+    }
+
+    if (!$self->allow_legacy_global_endpoint && $host =~ $LGE_CHECK_REGEXP) {
+        my ($S3_accesspoint_part, $amazonaws_part) = ($1, $2);
+        $host = $S3_accesspoint_part . $region . q{.} . $amazonaws_part;
+        $self->host($host);
+    }
 
     my $ua;
     if ($self->retry) {
