@@ -794,7 +794,8 @@ Defines the S3 host endpoint to use. Defaults to
 
 Note that requests are made to domain buckets when possible.  You can
 prevent that behavior if either the bucket name does conform to DNS
-bucket naming conventions or you preface the bucket name with '/'.
+bucket naming conventions or you preface the bucket name with '/'
+or set C<allow_legacy_path_based_bucket> to C<true> (see below).
 
 =item allow_legacy_global_endpoint
 
@@ -816,6 +817,26 @@ region in C<host> is missed between B<'s3'>
 and B<'amazonaws.com'> then it inserts content of B<region> there.
 
 B<WARNING! This feature changes default behaviour>
+
+=item allow_legacy_path_based_bucket
+
+According to this document:
+L<Virtual hosting of buckets|https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#path-style-access>
+
+  Currently Amazon S3 supports virtual hosted-style
+  and path-style access in all Regions,
+  but this will be changing.
+  For more information, see
+  Amazon S3 Path Deprecation Plan
+  http://aws.amazon.com/blogs/aws/amazon-s3-path-deprecation-plan-the-rest-of-the-story/
+
+To prevent automatic transformation
+of any requests to virtual hosted-style
+(move backet name from path to the host)
+set C<allow_legacy_path_based_bucket> to C<true>.
+
+If you want use legacy path-style requests,
+set C<allow_legacy_path_based_bucket> to C<false> which is default.
 
 =back
 
