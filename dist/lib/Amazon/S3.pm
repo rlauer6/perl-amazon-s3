@@ -206,7 +206,6 @@ sub list_bucket {
         my $strip_delim = qr/$conf->{delimiter}$/;
 
         foreach my $node ($r->{CommonPrefixes}) {
-# TODO TODO TODO
             if ( ref($node) ne 'ARRAY') {
              $node = [ $node ];
             }
@@ -290,7 +289,7 @@ sub _make_request {
     croak 'must specify method' unless $method;
     croak 'must specify path'   unless defined $path;
 
-    $self->_req_date( DateTime->now(time_zone => 'UTC') ); # TODO move to new
+    $self->_req_date( DateTime->now(time_zone => 'UTC') );
 
     $headers  ||= {};
     $data     //= '';
@@ -469,7 +468,7 @@ sub _add_auth_header {
     my $aws_access_key_id     = $self->aws_access_key_id;
     my $aws_secret_access_key = $self->aws_secret_access_key;
 
-    if ( $self->token ) { #TODO check AWS reference
+    if ( $self->token ) {
         $headers->header($AMAZON_HEADER_PREFIX . 'security-token', $self->token);
     }
 
@@ -522,24 +521,6 @@ sub _merge_meta {
 
     return $http_header;
 }
-
-#    # don't include anything after the first ? in the resource...
-#    $path =~ /^([^?]*)/;
-#    $buf .= "/$1";
-#
-#    # ...unless there any parameters we're interested in...
-#    if ( $path =~ /[&?](acl|torrent|location|uploads|delete)($|=|&)/ ) {
-#        $buf .= "?$1";
-#    } elsif ( my %query_params = URI->new($path)->query_form ){
-#        #see if the remaining parsed query string provides us with any query string or upload id
-#        if($query_params{partNumber} && $query_params{uploadId}){
-#            #re-evaluate query string, the order of the params is important for request signing, so we can't depend on URI to do the right thing
-#            $buf .= sprintf("?partNumber=%s&uploadId=%s", $query_params{partNumber}, $query_params{uploadId});
-#        }
-#        elsif($query_params{uploadId}){
-#            $buf .= sprintf("?uploadId=%s",$query_params{uploadId});
-#        }
-#    }
 
 sub _get_signature {
     my ($self, $method, $path, $headers, $expires, $hashed_payload) = @_;
