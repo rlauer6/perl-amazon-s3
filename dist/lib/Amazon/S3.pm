@@ -21,7 +21,7 @@ __PACKAGE__->mk_accessors(
         _req_date _canonical_request _string_to_sign _path_debug
     )
 );
-our $VERSION = '0.48'; #TODO
+our $VERSION = '0.49';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
