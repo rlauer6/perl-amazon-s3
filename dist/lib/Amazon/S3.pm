@@ -300,14 +300,18 @@ sub _make_request {
     my $url;
 
     if (    ! $self->allow_legacy_path_based_bucket
-            && $path =~ m{^([^/?]+)(.*)}
+            && $path =~ m{\A ([^/?]+) (.*) \z}xms
             && _is_dns_bucket($1)) {
-        $host = "$1.$host";
-        $url = "$protocol://$host$2";
+        my $bucket_name = $1;
+        my $rest_path   = $2;
+        $host = "$bucket_name.$host";
+        $url = "$protocol://$host" . $rest_path;
+        $path =~ s{\A [^/?]+ }{}xms; # cut bucket name
     }
     else {
-        $path =~s/^\///;
+        $path =~ s{\A /}{}xms; # remove leading '/' before bucket name
         $url = "$protocol://$host/$path";
+        $path = "/$path";
     }
         
     my $hashed_payload = 'UNSIGNED-PAYLOAD';
@@ -368,7 +372,8 @@ sub _do_http {
     # convenient time to reset any error conditions
     $self->err(undef);
     $self->errstr(undef);
-    return $self->ua->request($request, $filename);
+    my $response =  $self->ua->request($request, $filename);
+    return $response;
 }
 
 sub _send_request_expect_nothing {
@@ -530,8 +535,7 @@ sub _get_signature {
     my $uri = URI->new(uri_unescape($path));
     $path_debug .= "URI PATH: " . $uri->path . "\n";
 
-    my ($bucket_name, $object_key_name) = $path =~ /^([^\/]*)([^?]+)$/;
-    my $canonical_uri = uri_unescape($object_key_name);
+    my $canonical_uri = uri_unescape($path);
     utf8::decode($canonical_uri);
     $path_debug .= "DECODED URI: $canonical_uri" . "\n";
 
