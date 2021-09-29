@@ -826,6 +826,11 @@ set C<allow_legacy_path_based_bucket> to C<true>.
 If you want use legacy path-style requests,
 set C<allow_legacy_path_based_bucket> to C<false> which is default.
 
+=item allow_unsigned_payload
+
+Set this to C<true> to send requests with 'UNSIGNED-PAYLOAD'. Default is C<false>,
+which means that all payloads (even empty) will be sent in a signed way.
+
 =back
 
 =head2 buckets
