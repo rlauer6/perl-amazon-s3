@@ -19,6 +19,7 @@ __PACKAGE__->mk_accessors(
         region aws_access_key_id aws_secret_access_key token
         secure ua err errstr timeout retry host
         allow_legacy_global_endpoint allow_legacy_path_based_bucket
+        allow_unsigned_payload
         _req_date _canonical_request _string_to_sign _path_debug
     )
 );
@@ -314,19 +315,21 @@ sub _make_request {
         $path = "/$path";
     }
         
-    my $hashed_payload = 'UNSIGNED-PAYLOAD';
+    my $hashed_payload;
     my $content;
-    if ($data) {
-        if (ref($data)) {
-            my $sha = Digest::SHA->new(256);
-            $sha->addfile($data->{filename}, 'b');
-            $hashed_payload = $sha->hexdigest;
-            $content = $data->{sub};
-        }
-        else {
-            $hashed_payload = sha256_hex($data);
-            $content = $data;
-        }
+    if (ref($data)) {
+        my $sha = Digest::SHA->new(256);
+        $sha->addfile($data->{filename}, 'b');
+        $hashed_payload = $sha->hexdigest;
+        $content = $data->{sub};
+    }
+    else {
+        $hashed_payload = sha256_hex($data);
+        $content = $data;
+    }
+
+    if ($self->allow_unsigned_payload) {
+        $hashed_payload = 'UNSIGNED-PAYLOAD';
     }
 
     my $http_headers = $self->_merge_meta($headers, $metadata);
