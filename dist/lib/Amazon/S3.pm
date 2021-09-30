@@ -3,24 +3,35 @@ use strict;
 use warnings;
 
 use Carp;
-use Digest::HMAC_SHA1;
-use HTTP::Date;
+use Digest::SHA qw(sha256_hex hmac_sha256 hmac_sha256_hex);
+use DateTime;
 use MIME::Base64 qw(encode_base64);
 use Amazon::S3::Bucket;
 use LWP::UserAgent::Determined;
-use URI::Escape qw(uri_escape_utf8);
+use URI::Escape qw(uri_escape_utf8 uri_unescape);
 use XML::Simple;
 use Data::Dumper;
+use URI;
 
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
-    qw(aws_access_key_id aws_secret_access_key token secure ua err errstr timeout retry host)
+    qw(
+        region aws_access_key_id aws_secret_access_key token
+        secure ua err errstr timeout retry host
+        allow_legacy_global_endpoint allow_legacy_path_based_bucket
+        allow_unsigned_payload
+        _req_date _canonical_request _string_to_sign _path_debug
+    )
 );
-our $VERSION = '0.48';
+our $VERSION = '0.49';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
 my $KEEP_ALIVE_CACHESIZE = 10;
+my $LGE_CHECK_REGEXP     = qr/ ( s3 [^.]* [.]         # s3., s3-fips., etc
+                                 (?:dualstack[.])? )  # optional dualstack.
+                               ( amazonaws[.]com \z ) # amazonaws at the end
+                            /ixms;
 
 sub new {
     my $class = shift;
@@ -31,7 +42,22 @@ sub new {
 
     $self->secure(0)                if not defined $self->secure;
     $self->timeout(30)              if not defined $self->timeout;
-    $self->host('s3.amazonaws.com') if not defined $self->host;
+
+    # default to US East (N. Virginia) region
+    $self->region('us-east-1') unless $self->region;
+
+    my $region = $self->region;
+    my $host   = $self->host;
+    if (! defined $host) {
+        $host = "s3.amazonaws.com";
+        $self->host($host);
+    }
+
+    if (!$self->allow_legacy_global_endpoint && $host =~ $LGE_CHECK_REGEXP) {
+        my ($S3_accesspoint_part, $amazonaws_part) = ($1, $2);
+        $host = $S3_accesspoint_part . $region . q{.} . $amazonaws_part;
+        $self->host($host);
+    }
 
     my $ua;
     if ($self->retry) {
@@ -263,32 +289,60 @@ sub _make_request {
     my ($self, $method, $path, $headers, $data, $metadata) = @_;
     croak 'must specify method' unless $method;
     croak 'must specify path'   unless defined $path;
-    $headers ||= {};
-    $data = '' if not defined $data;
-    $metadata ||= {};
-    my $http_headers = $self->_merge_meta($headers, $metadata);
 
-    $self->_add_auth_header($http_headers, $method, $path)
-      unless exists $headers->{Authorization};
+    $self->_req_date( DateTime->now(time_zone => 'UTC') );
+
+    $headers  ||= {};
+    $data     //= '';
+    $metadata ||= {};
+
     my $protocol = $self->secure ? 'https' : 'http';
     my $host     = $self->host;
     my $url;
 
-    if ($path =~ m{^([^/?]+)(.*)} && _is_dns_bucket($1)) {
-        $url = "$protocol://$1.$host$2";
-      }
+    if (    ! $self->allow_legacy_path_based_bucket
+            && $path =~ m{\A ([^/?]+) (.*) \z}xms
+            && _is_dns_bucket($1)) {
+        my $bucket_name = $1;
+        my $rest_path   = $2;
+        $host = "$bucket_name.$host";
+        $url = "$protocol://$host" . $rest_path;
+        $path =~ s{\A [^/?]+ }{}xms; # cut bucket name
+    }
     else {
-      $path =~s/^\///;
-      $url = "$protocol://$host/$path";
+        $path =~ s{\A /}{}xms; # remove leading '/' before bucket name
+        $url = "$protocol://$host/$path";
+        $path = "/$path";
     }
         
-    my $request = HTTP::Request->new($method, $url, $http_headers);
-    $request->content($data);
+    my $hashed_payload;
+    my $content;
+    if (ref($data)) {
+        my $sha = Digest::SHA->new(256);
+        $sha->addfile($data->{filename}, 'b');
+        $hashed_payload = $sha->hexdigest;
+        $content = $data->{sub};
+    }
+    else {
+        $hashed_payload = sha256_hex($data);
+        $content = $data;
+    }
 
-    # my $req_as = $request->as_string;
-    # $req_as =~ s/[^\n\r\x20-\x7f]/?/g;
-    # $req_as = substr( $req_as, 0, 1024 ) . "\n\n";
-    # warn $req_as;
+    if ($self->allow_unsigned_payload) {
+        $hashed_payload = 'UNSIGNED-PAYLOAD';
+    }
+
+    my $http_headers = $self->_merge_meta($headers, $metadata);
+    $http_headers->{host} = $host;
+    $http_headers->{'x-amz-date'} = $self->_req_date->ymd("") . 'T' . $self->_req_date->hms("") . 'Z';
+    $http_headers->{'x-amz-content-sha256'} = $hashed_payload;
+
+    if(! exists $headers->{Authorization}) {
+        $self->_add_auth_header($http_headers, $method, $path, $hashed_payload);
+    }
+
+    my $request = HTTP::Request->new($method, $url, $http_headers);
+    $request->content($content);
 
     return $request;
 }
@@ -321,7 +375,8 @@ sub _do_http {
     # convenient time to reset any error conditions
     $self->err(undef);
     $self->errstr(undef);
-    return $self->ua->request($request, $filename);
+    my $response =  $self->ua->request($request, $filename);
+    return $response;
 }
 
 sub _send_request_expect_nothing {
@@ -417,22 +472,45 @@ sub _remember_errors {
 }
 
 sub _add_auth_header {
-  my ($self, $headers, $method, $path) = @_;
-  my $aws_access_key_id     = $self->aws_access_key_id;
-  my $aws_secret_access_key = $self->aws_secret_access_key;
-  
-  if (not $headers->header('Date')) {
-    $headers->header(Date => time2str(time));
-  }
-  
-  if ( $self->token ) {
-    $headers->header($AMAZON_HEADER_PREFIX . 'security-token', $self->token);
-  }
-  
-  my $canonical_string = $self->_canonical_string($method, $path, $headers);
-  my $encoded_canonical = $self->_encode($aws_secret_access_key, $canonical_string);
-  $headers->header( Authorization => "AWS $aws_access_key_id:$encoded_canonical");
+    my ($self, $headers, $method, $path, $hashed_payload) = @_;
+    my $aws_access_key_id     = $self->aws_access_key_id;
+    my $aws_secret_access_key = $self->aws_secret_access_key;
+
+    if ( $self->token ) {
+        $headers->header($AMAZON_HEADER_PREFIX . 'security-token', $self->token);
+    }
+
+    my $date = $self->_req_date->ymd("");
+    my $region = $self->region;
+    my ($signing_key, $signed_headers) = $self->_get_signature($method, $path, $headers, undef, $hashed_payload);
+
+    $headers->header( Authorization =>
+        # The algorithm that was used to calculate the signature.
+        # You must provide this value when you use AWS Signature Version 4 for authentication.
+        # The string specifies AWS Signature Version 4 (AWS4) and the signing algorithm (HMAC-SHA256).
+        "AWS4-HMAC-SHA256"
+        # * There is space between the first two components, AWS4-HMAC-SHA256 and Credential
+        # * The subsequent components, Credential, SignedHeaders, and Signature are separated by a comma.
+        . " "
+        # Credential:
+        # Your access key ID and the scope information,
+        # which includes the date, region, and service that were used to calculate the signature.
+        # This string has the following form:
+        # <your-access-key-id>/<date>/<aws-region>/<aws-service>/aws4_request
+        # Where:
+        # * <date> value is specified using YYYYMMDD format.
+        # * <aws-service> value is s3 when sending request to Amazon S3.
+        . "Credential=$aws_access_key_id/$date/$region/s3/aws4_request,"
+        # SignedHeaders:
+        # A semicolon-separated list of request headers that you used to compute Signature.
+        # The list includes header names only, and the header names must be in lowercase.
+        . "SignedHeaders=$signed_headers,"
+        # Signature:
+        # The 256-bit signature expressed as 64 lowercase hexadecimal characters.
+        . "Signature=$signing_key"
+    );
 }
+
 
 # generates an HTTP::Headers objects given one hash that represents http
 # headers to set and another hash that represents an object's metadata.
@@ -452,67 +530,73 @@ sub _merge_meta {
     return $http_header;
 }
 
-# generate a canonical string for the given parameters.  expires is optional and is
-# only used by query string authentication.
-sub _canonical_string {
-    my ($self, $method, $path, $headers, $expires) = @_;
-  
-    # initial / meant to force host/bucket-name instead of DNS based name
-    $path =~s/^\///;
-  
-    my %interesting_headers = ();
-    while (my ($key, $value) = each %$headers) {
-        my $lk = lc $key;
-        if (   $lk eq 'content-md5'
-            or $lk eq 'content-type'
-            or $lk eq 'date'
-            or $lk =~ /^$AMAZON_HEADER_PREFIX/)
-        {
-            $interesting_headers{$lk} = $self->_trim($value);
-        }
+sub _get_signature {
+    my ($self, $method, $path, $headers, $expires, $hashed_payload) = @_;
+
+    my $path_debug = "RAW PATH: $path\n";
+
+    my $uri = URI->new(uri_unescape($path));
+    $path_debug .= "URI PATH: " . $uri->path . "\n";
+
+    my $canonical_uri = uri_unescape($path);
+    utf8::decode($canonical_uri);
+    $path_debug .= "DECODED URI: $canonical_uri" . "\n";
+
+    $canonical_uri = $self->_urlencode($canonical_uri, '/');
+
+    $self->_path_debug($path_debug);
+
+    my $canonical_query_string = "";
+    my %parameters = $uri->query_form;
+    foreach my $key (sort keys %parameters) {
+        $canonical_query_string .= '&' if $canonical_query_string;
+        $canonical_query_string .= $self->_urlencode($key);
+        $canonical_query_string .= '=';
+        $canonical_query_string .= $self->_urlencode($parameters{$key});
     }
 
-    # these keys get empty strings if they don't exist
-    $interesting_headers{'content-type'} ||= '';
-    $interesting_headers{'content-md5'}  ||= '';
+    my $canonical_headers = "";
+    my $signed_headers;
+    foreach my $field_name (sort { lc($a) cmp lc($b) } $headers->header_field_names) {
+        $canonical_headers .= lc($field_name);
+        $canonical_headers .= ':';
+        $canonical_headers .= $self->_trim( $headers->header($field_name) );
+        $canonical_headers .= "\n";
 
-    # just in case someone used this.  it's not necessary in this lib.
-    $interesting_headers{'date'} = ''
-      if $interesting_headers{'x-amz-date'};
-
-    # if you're using expires for query string auth, then it trumps date
-    # (and x-amz-date)
-    $interesting_headers{'date'} = $expires if $expires;
-
-    my $buf = "$method\n";
-    foreach my $key (sort keys %interesting_headers) {
-        if ($key =~ /^$AMAZON_HEADER_PREFIX/) {
-            $buf .= "$key:$interesting_headers{$key}\n";
-        }
-        else {
-            $buf .= "$interesting_headers{$key}\n";
-        }
+        $signed_headers .= ';' if $signed_headers;
+        $signed_headers .= lc($field_name);
     }
 
-    # don't include anything after the first ? in the resource...
-    $path =~ /^([^?]*)/;
-    $buf .= "/$1";
+    # From: https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
+    #
+    # HTTPMethod is one of the HTTP methods, for example GET, PUT, HEAD, and DELETE
+    my $canonical_request = "$method\n";
+    # CanonicalURI is the URI-encoded version of the absolute path component of the URI
+    $canonical_request .= "$canonical_uri\n";
+    # CanonicalQueryString specifies the URI-encoded query string parameters.
+    $canonical_request .= "$canonical_query_string\n";
+    # CanonicalHeaders is a list of request headers with their values.
+    $canonical_request .= "$canonical_headers\n";
+    # SignedHeaders is an alphabetically sorted,
+    # semicolon-separated list of lowercase request header names.
+    $canonical_request .= "$signed_headers\n";
+    $canonical_request .= $hashed_payload;
+    $self->_canonical_request($canonical_request);
 
-    # ...unless there any parameters we're interested in...
-    if ( $path =~ /[&?](acl|torrent|location|uploads|delete)($|=|&)/ ) {
-        $buf .= "?$1";
-    } elsif ( my %query_params = URI->new($path)->query_form ){
-        #see if the remaining parsed query string provides us with any query string or upload id
-        if($query_params{partNumber} && $query_params{uploadId}){
-            #re-evaluate query string, the order of the params is important for request signing, so we can't depend on URI to do the right thing
-            $buf .= sprintf("?partNumber=%s&uploadId=%s", $query_params{partNumber}, $query_params{uploadId});
-        }
-        elsif($query_params{uploadId}){
-            $buf .= sprintf("?uploadId=%s",$query_params{uploadId});
-        }
-    }
+    my $string_to_sign = "AWS4-HMAC-SHA256\n";
+    $string_to_sign .= $self->_req_date->ymd("") . 'T' . $self->_req_date->hms("") . "Z\n";
+    # Scope binds the resulting signature to a specific date, an AWS region, and a service.
+    $string_to_sign .= $self->_req_date->ymd("") . '/' . $self->region . "/s3/aws4_request\n";
+    $string_to_sign .= sha256_hex($canonical_request);
+    $self->_string_to_sign($string_to_sign);
 
-    return $buf;
+    my $date_key = hmac_sha256($self->_req_date->ymd(""), 'AWS4' . $self->aws_secret_access_key);
+    my $date_region_key = hmac_sha256($self->region, $date_key);
+    my $date_region_service_key = hmac_sha256('s3', $date_region_key);
+    my $signing_key = hmac_sha256('aws4_request', $date_region_service_key);
+    my $signature = hmac_sha256_hex($string_to_sign, $signing_key);
+
+    return ($signature, $signed_headers);
 }
 
 sub _trim {
@@ -522,24 +606,10 @@ sub _trim {
     return $value;
 }
 
-# finds the hmac-sha1 hash of the canonical string and the aws secret access key and then
-# base64 encodes the result (optionally urlencoding after that).
-sub _encode {
-    my ($self, $aws_secret_access_key, $str, $urlencode) = @_;
-    my $hmac = Digest::HMAC_SHA1->new($aws_secret_access_key);
-    $hmac->add($str);
-    my $b64 = encode_base64($hmac->digest, '');
-    if ($urlencode) {
-        return $self->_urlencode($b64);
-    }
-    else {
-        return $b64;
-    }
-}
-
 sub _urlencode {
-    my ($self, $unencoded) = @_;
-    return uri_escape_utf8($unencoded, '^A-Za-z0-9_-');
+    my ($self, $unencoded, $noencode) = @_;
+    $noencode //= '';
+    return  uri_escape_utf8($unencoded, "^A-Za-z0-9-._~" . $noencode);
 }
 
 1;
@@ -564,8 +634,12 @@ managing Amazon S3 buckets and keys.
   my $aws_access_key_id     = "Fill me in!";
   my $aws_secret_access_key = "Fill me in too!";
   
+  # defaults to US East (N. Virginia)
+  my $region = "us-east-1";
+
   my $s3 = Amazon::S3->new(
-      {   aws_access_key_id     => $aws_access_key_id,
+      {   region                => $region,
+          aws_access_key_id     => $aws_access_key_id,
           aws_secret_access_key => $aws_secret_access_key,
           retry                 => 1
       }
@@ -649,6 +723,14 @@ Create a new S3 client object. Takes some arguments:
 
 =over
 
+=item region
+
+This is the region your buckets are in.
+Defaults to us-east-1
+
+See a list of regions at:
+https://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
+
 =item aws_access_key_id 
 
 Use your Access Key ID as the value of the AWSAccessKeyId parameter
@@ -695,11 +777,59 @@ retries.
 =item host
 
 Defines the S3 host endpoint to use. Defaults to
-'s3.amazonaws.com'.
+'s3.us-east-1.amazonaws.com'
+(or 's3.amazonaws.com' if C<allow_legacy_global_endpoint> is true. See below).
 
 Note that requests are made to domain buckets when possible.  You can
 prevent that behavior if either the bucket name does conform to DNS
-bucket naming conventions or you preface the bucket name with '/'.
+bucket naming conventions or you preface the bucket name with '/'
+or set C<allow_legacy_path_based_bucket> to C<true> (see below).
+
+=item allow_legacy_global_endpoint
+
+Accordind to this document:
+L<Virtual hosting of buckets|https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#VirtualHostingBackwardsCompatibility>
+
+  Some Regions support legacy endpoints.
+  Although you might see legacy endpoints in your logs,
+  we recommend that you always use the standard endpoint syntax
+  to access your buckets.
+
+Set C<allow_legacy_global_endpoint> to C<true> if you don't want
+the constructor to check if region in the C<host> is missed and
+automatically insert C<region> into C<host>.
+
+When it set to C<false> (default) constructor try to recognize if
+region in C<host> is missed between B<'s3'>
+(in fact 's3', 's3-anythig-not-dot' and optional 'dualstack')
+and B<'amazonaws.com'> then it inserts content of B<region> there.
+
+B<WARNING! This feature changes default behaviour>
+
+=item allow_legacy_path_based_bucket
+
+According to this document:
+L<Virtual hosting of buckets|https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#path-style-access>
+
+  Currently Amazon S3 supports virtual hosted-style
+  and path-style access in all Regions,
+  but this will be changing.
+  For more information, see
+  Amazon S3 Path Deprecation Plan
+  http://aws.amazon.com/blogs/aws/amazon-s3-path-deprecation-plan-the-rest-of-the-story/
+
+To prevent automatic transformation
+of any requests to virtual hosted-style
+(move backet name from path to the host)
+set C<allow_legacy_path_based_bucket> to C<true>.
+
+If you want use legacy path-style requests,
+set C<allow_legacy_path_based_bucket> to C<false> which is default.
+
+=item allow_unsigned_payload
+
+Set this to C<true> to send requests with 'UNSIGNED-PAYLOAD'. Default is C<false>,
+which means that all payloads (even empty) will be sent in a signed way.
 
 =back
 
