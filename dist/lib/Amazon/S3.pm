@@ -13,6 +13,13 @@ use XML::Simple;
 use Data::Dumper;
 use URI;
 
+sub LOGCROAK { my @messages = @_; croak @messages; }
+sub LOGCARP  { my @messages = @_; carp @messages; return 1; }
+sub ERROR    { my @messages = @_; carp @messages; return 1; }
+sub INFO     { return 1; } # Do not print debug output by default
+sub DEBUG    { return 1; } # Do not print debug output by default
+sub TRACE    { return 1; } # Do not print debug output by default
+
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
     qw(
@@ -20,25 +27,26 @@ __PACKAGE__->mk_accessors(
         secure ua err errstr timeout retry host
         allow_legacy_global_endpoint allow_legacy_path_based_bucket
         allow_unsigned_payload
-        _req_date _canonical_request _string_to_sign _path_debug
+        _req_date
     )
 );
-our $VERSION = '0.49';
+our $VERSION = '0.50';
 
 my $AMAZON_HEADER_PREFIX = 'x-amz-';
 my $METADATA_PREFIX      = 'x-amz-meta-';
 my $KEEP_ALIVE_CACHESIZE = 10;
-my $LGE_CHECK_REGEXP     = qr/ ( s3 [^.]* [.]         # s3., s3-fips., etc
+my $LGE_CHECK_REGEXP     = qr{ ( s3 [^.]* [.]         # s3., s3-fips., etc
                                  (?:dualstack[.])? )  # optional dualstack.
                                ( amazonaws[.]com \z ) # amazonaws at the end
-                            /ixms;
+                            }ixms;
 
 sub new {
     my $class = shift;
     my $self  = $class->SUPER::new(@_);
+    TRACE 'Entering new';
 
-    die "No aws_access_key_id"     unless $self->aws_access_key_id;
-    die "No aws_secret_access_key" unless $self->aws_secret_access_key;
+    LOGCROAK "No aws_access_key_id"     unless $self->aws_access_key_id;
+    LOGCROAK "No aws_secret_access_key" unless $self->aws_secret_access_key;
 
     $self->secure(0)                if not defined $self->secure;
     $self->timeout(30)              if not defined $self->timeout;
@@ -47,17 +55,21 @@ sub new {
     $self->region('us-east-1') unless $self->region;
 
     my $region = $self->region;
+    DEBUG "region: $region";
+
     my $host   = $self->host;
     if (! defined $host) {
-        $host = "s3.amazonaws.com";
+        $host = 's3.amazonaws.com';
+        INFO "host wasn't defined, use default: $host (can be changed later)";
         $self->host($host);
     }
 
     if (!$self->allow_legacy_global_endpoint && $host =~ $LGE_CHECK_REGEXP) {
-        my ($S3_accesspoint_part, $amazonaws_part) = ($1, $2);
-        $host = $S3_accesspoint_part . $region . q{.} . $amazonaws_part;
+        my ($accesspoint_part, $amazonaws_part) = ($1, $2);
+        $host = $accesspoint_part . $region . q{.} . $amazonaws_part;
         $self->host($host);
     }
+    DEBUG "host: $host";
 
     my $ua;
     if ($self->retry) {
@@ -73,18 +85,26 @@ sub new {
             requests_redirectable => [qw(GET HEAD DELETE PUT)],
         );
     }
+    DEBUG 'ua_class: ' . ref $ua;
 
     $ua->timeout($self->timeout);
     $ua->env_proxy;
     $self->ua($ua);
+
+    INFO 'self created, leave "new"';
+    TRACE sub{ return 'self: ', Dumper $self };
     return $self;
 }
 
 sub buckets {
     my $self = shift;
+    TRACE 'Entering buckets';
+
     my $r = $self->_send_request('GET', '', {});
+    TRACE sub { return 'Response: ', Dumper $r };
 
     return undef unless $r && !$self->_remember_errors($r);
+    INFO 'Response recieved and it is successfull';
 
     my $owner_id          = $r->{Owner}{ID};
     my $owner_displayname = $r->{Owner}{DisplayName};
@@ -101,20 +121,26 @@ sub buckets {
                     account       => $self,
                 }
               );
+              DEBUG 'node->{name}: ', $node->{Name};
 
         }
     }
-    return {
+
+    my $buckets_href = {
         owner_id          => $owner_id,
         owner_displayname => $owner_displayname,
         buckets           => \@buckets,
     };
+    INFO scalar @{$buckets_href->{'buckets'}} . ' found, leave "buckets"';
+    TRACE sub{ return 'buckets_href: ', Dumper $buckets_href };
+    return $buckets_href;
 }
 
 sub add_bucket {
     my ($self, $conf) = @_;
     my $bucket = $conf->{bucket};
-    croak 'must specify bucket' unless $bucket;
+    LOGCROAK 'must specify bucket' unless $bucket;
+    DEBUG 'Creating bucket: ', $bucket;
 
     if ($conf->{acl_short}) {
         $self->_validate_acl_short($conf->{acl_short});
@@ -137,12 +163,19 @@ sub add_bucket {
       unless $self->_send_request_expect_nothing('PUT', "$bucket/",
         $header_ref, $data);
 
-    return $self->bucket($bucket);
+    my $bucket_instance =  $self->bucket($bucket);
+    INFO 'Bucket ', $bucket, ' was created, leave "add_bucket"';
+    TRACE sub{ return 'bucket_instance: ', Dumper $bucket_instance };
+    return $bucket_instance;
 }
 
 sub bucket {
     my ($self, $bucketname) = @_;
-    return Amazon::S3::Bucket->new({bucket => $bucketname, account => $self});
+    INFO 'Creating bucket instance: ', $bucketname;
+
+    my $bucket = Amazon::S3::Bucket->new({bucket => $bucketname, account => $self});
+    TRACE sub{ return 'bucket: ', Dumper $bucket };
+    return $bucket;
 }
 
 sub delete_bucket {
@@ -154,15 +187,20 @@ sub delete_bucket {
     else {
         $bucket = $conf->{bucket};
     }
-    croak 'must specify bucket' unless $bucket;
-    return $self->_send_request_expect_nothing('DELETE', $bucket . "/", {});
+    LOGCROAK 'must specify bucket' unless $bucket;
+
+    INFO 'Deleting bucket: ', $bucket;
+    my $response = $self->_send_request_expect_nothing('DELETE', $bucket . "/", {});
+    TRACE sub{ return 'response: ', Dumper $response };
+    return $response;
 }
 
 sub list_bucket {
     my ($self, $conf) = @_;
     my $bucket = delete $conf->{bucket};
-    croak 'must specify bucket' unless $bucket;
+    LOGCROAK 'must specify bucket' unless $bucket;
     $conf ||= {};
+    INFO 'List bucket: ', $bucket;
 
     my $path = $bucket . "/";
     if (%$conf) {
@@ -170,9 +208,14 @@ sub list_bucket {
           . join('&',
             map { $_ . "=" . $self->_urlencode($conf->{$_}) } keys %$conf);
     }
+    DEBUG 'path: ', $path;
 
     my $r = $self->_send_request('GET', $path, {});
     return undef unless $r && !$self->_remember_errors($r);
+    INFO 'Response recieved and it is successfull';
+    DEBUG 'Bucket name: ', $r->{Name};
+    TRACE sub{ return 'Response (r): ', Dumper $r };
+
     my $return = {
         bucket       => $r->{Name},
         prefix       => $r->{Prefix},
@@ -199,6 +242,7 @@ sub list_bucket {
             owner_id          => $node->{Owner}{ID},
             owner_displayname => $node->{Owner}{DisplayName},
           };
+        DEBUG 'Key: ', $node->{Key};
     }
     $return->{keys} = \@keys;
 
@@ -225,6 +269,8 @@ sub list_bucket {
         $return->{common_prefixes} = \@common_prefixes;
     }
 
+    INFO 'Listed bucket: ', $bucket, ', leave "list_backet"';
+    TRACE sub{ return 'return: ', Dumper $return };
     return $return;
 }
 
@@ -232,9 +278,11 @@ sub list_bucket_all {
     my ($self, $conf) = @_;
     $conf ||= {};
     my $bucket = $conf->{bucket};
-    croak 'must specify bucket' unless $bucket;
+    LOGCROAK 'must specify bucket' unless $bucket;
+    INFO 'List bucket all: ', $bucket;
 
     my $response = $self->list_bucket($conf);
+    TRACE sub{ return 'First response: ', Dumper $response };
     return $response unless ref($response) && $response->{is_truncated};
     my $all = $response;
 
@@ -244,12 +292,14 @@ sub list_bucket_all {
         $conf->{marker} = $next_marker;
         $conf->{bucket} = $bucket;
         $response       = $self->list_bucket($conf);
+        TRACE sub{ return 'Next response: ', Dumper $response };
         push @{$all->{keys}}, @{$response->{keys}};
         last unless $response->{is_truncated};
     }
 
     delete $all->{is_truncated};
     delete $all->{next_marker};
+    TRACE sub{ return 'all: ', Dumper $all };
     return $all;
 }
 
@@ -259,14 +309,18 @@ sub _validate_acl_short {
     if (!grep({$policy_name eq $_}
             qw(private public-read public-read-write authenticated-read)))
     {
-        croak "$policy_name is not a supported canned access policy";
+        LOGCROAK "$policy_name is not a supported canned access policy";
     }
+
+    INFO 'Policy validated: ', $policy_name;
+    return 1;
 }
 
 # EU buckets must be accessed via their DNS name. This routine figures out if
 # a given bucket name can be safely used as a DNS name.
 sub _is_dns_bucket {
     my $bucketname = $_[0];
+    INFO 'Check _is_dns_bucket for bucket: ', $bucketname;
 
     if (length $bucketname > 63) {
         return 0;
@@ -281,24 +335,31 @@ sub _is_dns_bucket {
         return 0 if $c =~ m{-$};
         return 0 if $c eq '';
     }
+    INFO $bucketname, ' _is_ dns bucket';
     return 1;
 }
 
 # make the HTTP::Request object
 sub _make_request {
     my ($self, $method, $path, $headers, $data, $metadata) = @_;
-    croak 'must specify method' unless $method;
-    croak 'must specify path'   unless defined $path;
+    LOGCROAK 'must specify method' unless $method;
+    LOGCROAK 'must specify path'   unless defined $path;
+    INFO "_make_request for method: $method, path: $path";
+    DEBUG '_make_request for data with length= ', length $data || q{};
 
     $self->_req_date( DateTime->now(time_zone => 'UTC') );
 
     $headers  ||= {};
-    $data     //= '';
+    $data     //= q{}; # Empty string
     $metadata ||= {};
+    DEBUG sub{ return 'passed headers: ', Dumper $headers };
+    DEBUG sub{ return 'passed metadata: ', Dumper $metadata };
+    TRACE '_req_date: ', $self->_req_date->stringify;
 
     my $protocol = $self->secure ? 'https' : 'http';
     my $host     = $self->host;
     my $url;
+    DEBUG "protocol: $protocol, initial host: $host";
 
     if (    ! $self->allow_legacy_path_based_bucket
             && $path =~ m{\A ([^/?]+) (.*) \z}xms
@@ -314,10 +375,11 @@ sub _make_request {
         $url = "$protocol://$host/$path";
         $path = "/$path";
     }
-        
+    DEBUG "new host: $host, url: $url, path: $path";
+
     my $hashed_payload;
     my $content;
-    if (ref($data)) {
+    if (ref $data) {
         my $sha = Digest::SHA->new(256);
         $sha->addfile($data->{filename}, 'b');
         $hashed_payload = $sha->hexdigest;
@@ -331,19 +393,24 @@ sub _make_request {
     if ($self->allow_unsigned_payload) {
         $hashed_payload = 'UNSIGNED-PAYLOAD';
     }
+    DEBUG "hashed_payload: $hashed_payload";
 
     my $http_headers = $self->_merge_meta($headers, $metadata);
     $http_headers->{host} = $host;
     $http_headers->{'x-amz-date'} = $self->_req_date->ymd("") . 'T' . $self->_req_date->hms("") . 'Z';
     $http_headers->{'x-amz-content-sha256'} = $hashed_payload;
+    TRACE sub{ return 'http_headers: ', Dumper $http_headers };
 
     if(! exists $headers->{Authorization}) {
+        DEBUG 'Call _add_auth_header, because headers->{Authorization} missed';
         $self->_add_auth_header($http_headers, $method, $path, $hashed_payload);
     }
 
     my $request = HTTP::Request->new($method, $url, $http_headers);
+    TRACE sub{ return 'The request without content: ', Dumper $request };
     $request->content($content);
 
+    INFO 'Request created, leave "_make_request"';
     return $request;
 }
 
@@ -353,15 +420,19 @@ sub _send_request {
     my $self = shift;
     my $request;
     if (@_ == 1) {
+        INFO '_send_request with prepared request';
         $request = shift;
     }
     else {
+        INFO '_send_request, but call "_make_request" before';
         $request = $self->_make_request(@_);
     }
 
     my $response = $self->_do_http($request);
-    
+    INFO 'response was recieved, status: ', $response->code;
+
     my $content  = $response->content;
+    DEBUG 'Content len: ', length $content, ',type:', $response->content_type;
 
     return $content unless $response->content_type eq 'application/xml';
     return unless $content;
@@ -371,20 +442,24 @@ sub _send_request {
 # centralize all HTTP work, for debugging
 sub _do_http {
     my ($self, $request, $filename) = @_;
+    INFO '_do_http with request and filename: ', $filename || 'EMPTY';
 
     # convenient time to reset any error conditions
     $self->err(undef);
     $self->errstr(undef);
     my $response =  $self->ua->request($request, $filename);
+    TRACE sub{ return 'Response: ', Dumper $response };
     return $response;
 }
 
 sub _send_request_expect_nothing {
     my $self    = shift;
+    INFO '_send_request_expect_nothing';
     my $request = $self->_make_request(@_);
 
     my $response = $self->_do_http($request);
     my $content  = $response->content;
+    INFO 'response was recieved, status: ', $response->code;
 
     return 1 if $response->code =~ /^2\d\d$/;
 
@@ -403,6 +478,7 @@ sub _send_request_expect_nothing {
 sub _send_request_expect_nothing_probed {
     my $self = shift;
     my ($method, $path, $conf, $value) = @_;
+    INFO '_send_request_expect_nothing_probed, make HEAD request';
     my $request = $self->_make_request('HEAD', $path);
     my $override_uri = undef;
 
@@ -410,14 +486,20 @@ sub _send_request_expect_nothing_probed {
     $self->ua->requests_redirectable([]);
 
     my $response = $self->_do_http($request);
+    DEBUG '1st response was recieved, status: ', $response->code;
 
     if ($response->code =~ /^3/ && defined $response->header('Location')) {
         $override_uri = $response->header('Location');
+        DEBUG 'override_uri: ', $override_uri;
     }
+
+    INFO '_send_request_expect_nothing_probed, make 2nd request';
     $request = $self->_make_request(@_);
     $request->uri($override_uri) if defined $override_uri;
 
     $response = $self->_do_http($request);
+    DEBUG '2nd response was recieved, status: ', $response->code;
+
     $self->ua->requests_redirectable($old_redirectable);
 
     my $content = $response->content;
@@ -431,27 +513,34 @@ sub _send_request_expect_nothing_probed {
 
 sub _croak_if_response_error {
     my ($self, $response) = @_;
+    INFO '_croak_if_response_error';
     unless ($response->code =~ /^2\d\d$/) {
         $self->err("network_error");
         $self->errstr($response->status_line);
-        croak "Amazon::S3: Amazon responded with "
+        LOGCROAK 'Amazon::S3: Amazon responded with '
           . $response->status_line . "\n";
     }
+    return 1;
 }
 
 sub _xpc_of_content {
     my ($self, $src, $keep_root) = @_;
+    $keep_root //= q{}; # Empty string;
+    INFO 'read XML with length: ', length $src, " KeepRoot: $keep_root";
     return XMLin($src, 'SuppressEmpty' => '', 'ForceArray' => ['Contents'], 'KeepRoot' => $keep_root);
 }
 
 # returns 1 if errors were found
 sub _remember_errors {
     my ($self, $src, $keep_root) = @_;
+    $keep_root //= q{}; # Empty string;
+    INFO '_remember_errors for scr:', ref $src, " KeepRoot: $keep_root";
 
     unless (ref $src || $src =~ m/^[[:space:]]*</) {    # if not xml
         (my $code = $src) =~ s/^[[:space:]]*\([0-9]*\).*$/$1/;
         $self->err($code);
         $self->errstr($src);
+        ERROR "#: $code, str: $src";
         return 1;
     }
 
@@ -461,28 +550,36 @@ sub _remember_errors {
     if ($r->{Error}) {
       $r = $r->{Error};
     }
-    
+
     if ($r->{Code}) {
       $self->err($r->{Code});
       $self->errstr($r->{Message});
+      ERROR $r->{Code}, ', str:', $r->{Message};
       return 1;
     }
-    
+
+    TRACE 'No remeber errors';
     return 0;
 }
 
 sub _add_auth_header {
     my ($self, $headers, $method, $path, $hashed_payload) = @_;
+    INFO "_add_auth_header for $path via $method";
     my $aws_access_key_id     = $self->aws_access_key_id;
     my $aws_secret_access_key = $self->aws_secret_access_key;
+    DEBUG "aws_access_key_id: $aws_access_key_id";
 
     if ( $self->token ) {
+        DEBUG 'adding token: ', $self->token;
         $headers->header($AMAZON_HEADER_PREFIX . 'security-token', $self->token);
     }
 
     my $date = $self->_req_date->ymd("");
     my $region = $self->region;
+    DEBUG "date: $date, region: $region, hashed_payload: $hashed_payload";
     my ($signing_key, $signed_headers) = $self->_get_signature($method, $path, $headers, undef, $hashed_payload);
+    TRACE "signature recieved, signing_key: $signing_key";
+    TRACE sub{ return 'signed_headers: ', Dumper $signed_headers };
 
     $headers->header( Authorization =>
         # The algorithm that was used to calculate the signature.
@@ -509,6 +606,8 @@ sub _add_auth_header {
         # The 256-bit signature expressed as 64 lowercase hexadecimal characters.
         . "Signature=$signing_key"
     );
+    DEBUG 'Authorization string: ', $headers->header('Authorization');
+    return 1;
 }
 
 
@@ -516,15 +615,18 @@ sub _add_auth_header {
 # headers to set and another hash that represents an object's metadata.
 sub _merge_meta {
     my ($self, $headers, $metadata) = @_;
+    INFO 'Merge metadata to headers';
     $headers  ||= {};
     $metadata ||= {};
 
     my $http_header = HTTP::Headers->new;
     while (my ($k, $v) = each %$headers) {
         $http_header->header($k => $v);
+        TRACE "Header: $k => $v";
     }
     while (my ($k, $v) = each %$metadata) {
         $http_header->header("$METADATA_PREFIX$k" => $v);
+        TRACE "Metadata: $METADATA_PREFIX$k => $v";
     }
 
     return $http_header;
@@ -532,21 +634,21 @@ sub _merge_meta {
 
 sub _get_signature {
     my ($self, $method, $path, $headers, $expires, $hashed_payload) = @_;
+    INFO "_get_signature for $path via $method";
 
-    my $path_debug = "RAW PATH: $path\n";
+    DEBUG "RAW PATH: $path";
 
     my $uri = URI->new(uri_unescape($path));
-    $path_debug .= "URI PATH: " . $uri->path . "\n";
+    DEBUG 'URI PATH: ', $uri->path;
 
     my $canonical_uri = uri_unescape($path);
     utf8::decode($canonical_uri);
-    $path_debug .= "DECODED URI: $canonical_uri" . "\n";
+    DEBUG "DECODED URI: $canonical_uri";
 
     $canonical_uri = $self->_urlencode($canonical_uri, '/');
+    DEBUG "CANONICAL URI: $canonical_uri";
 
-    $self->_path_debug($path_debug);
-
-    my $canonical_query_string = "";
+    my $canonical_query_string = q{}; # Empty string
     my %parameters = $uri->query_form;
     foreach my $key (sort keys %parameters) {
         $canonical_query_string .= '&' if $canonical_query_string;
@@ -554,6 +656,7 @@ sub _get_signature {
         $canonical_query_string .= '=';
         $canonical_query_string .= $self->_urlencode($parameters{$key});
     }
+    DEBUG 'canonical_query_string: ', $canonical_query_string;
 
     my $canonical_headers = "";
     my $signed_headers;
@@ -566,6 +669,8 @@ sub _get_signature {
         $signed_headers .= ';' if $signed_headers;
         $signed_headers .= lc($field_name);
     }
+    DEBUG 'canonical_headers: ', $canonical_headers;
+    DEBUG 'signed_headers: ', $signed_headers;
 
     # From: https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
     #
@@ -581,20 +686,25 @@ sub _get_signature {
     # semicolon-separated list of lowercase request header names.
     $canonical_request .= "$signed_headers\n";
     $canonical_request .= $hashed_payload;
-    $self->_canonical_request($canonical_request);
+    DEBUG 'canonical_request: ', $canonical_request;
 
     my $string_to_sign = "AWS4-HMAC-SHA256\n";
     $string_to_sign .= $self->_req_date->ymd("") . 'T' . $self->_req_date->hms("") . "Z\n";
     # Scope binds the resulting signature to a specific date, an AWS region, and a service.
     $string_to_sign .= $self->_req_date->ymd("") . '/' . $self->region . "/s3/aws4_request\n";
     $string_to_sign .= sha256_hex($canonical_request);
-    $self->_string_to_sign($string_to_sign);
+    DEBUG 'string_to_sign: ', $string_to_sign;
 
     my $date_key = hmac_sha256($self->_req_date->ymd(""), 'AWS4' . $self->aws_secret_access_key);
+    TRACE sub{ return 'date_key: ', unpack 'H*', $date_key };
     my $date_region_key = hmac_sha256($self->region, $date_key);
+    TRACE sub{ return 'date_region_key: ', unpack 'H*', $date_region_key };
     my $date_region_service_key = hmac_sha256('s3', $date_region_key);
+    TRACE sub{ return 'date_region_service_key: ', unpack 'H*', $date_region_service_key };
     my $signing_key = hmac_sha256('aws4_request', $date_region_service_key);
+    TRACE sub{ return 'signing_key: ', unpack 'H*', $signing_key };
     my $signature = hmac_sha256_hex($string_to_sign, $signing_key);
+    DEBUG 'SIGNATURE: ', $signature;
 
     return ($signature, $signed_headers);
 }
@@ -603,13 +713,17 @@ sub _trim {
     my ($self, $value) = @_;
     $value =~ s/^\s+//;
     $value =~ s/\s+$//;
+    TRACE "trimmed value: $value, leave '_trim'";
     return $value;
 }
 
 sub _urlencode {
     my ($self, $unencoded, $noencode) = @_;
-    $noencode //= '';
-    return  uri_escape_utf8($unencoded, "^A-Za-z0-9-._~" . $noencode);
+    $noencode //= q{}; # Empty string
+    TRACE "_urlencode for '$unencoded', noencode: '$noencode'";
+    my $uri = uri_escape_utf8($unencoded, '^A-Za-z0-9-._~' . $noencode);
+    DEBUG "URI was encoded: $uri, leave '_urlencode'";
+    return $uri;
 }
 
 1;
