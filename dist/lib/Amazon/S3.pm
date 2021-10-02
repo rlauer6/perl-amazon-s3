@@ -12,13 +12,7 @@ use URI::Escape qw(uri_escape_utf8 uri_unescape);
 use XML::Simple;
 use Data::Dumper;
 use URI;
-
-sub LOGCROAK { my @messages = @_; croak @messages; }
-sub LOGCARP  { my @messages = @_; carp @messages; return 1; }
-sub ERROR    { my @messages = @_; carp @messages; return 1; }
-sub INFO     { return 1; } # Do not print debug output by default
-sub DEBUG    { return 1; } # Do not print debug output by default
-sub TRACE    { return 1; } # Do not print debug output by default
+use Amazon::S3::Log::Placeholders qw{:debug :errors :carp};
 
 use base qw(Class::Accessor::Fast);
 __PACKAGE__->mk_accessors(
@@ -1190,29 +1184,12 @@ L<Amazon::S3> module this code:
 
     use English qw{ -no_match_vars };
     use Amazon::S3;
-    sub easy_closure_placehoderls_cleanup {
-        my @packages_names = @_;
-        my @closures_names = qw{
-          TRACE DEBUG INFO WARN ERROR FATAL ALWAYS
-          LOGCROAK LOGCLUCK LOGCARP LOGCONFESS
-          LOGDIE LOGEXIT LOGWARN
-        };
-        eval {
-            for my $package_name (@packages_names) {
-                foreach my $sub (@closures_names) {
-                    undef &{"$package_name\::$sub"};
-                }
-            }
-            1;
-        } || croak $EVAL_ERROR;
-        return 1;
-    }
-    easy_closure_placehoderls_cleanup(qw{Amazon::S3});
 
     eval {
         require Log::Log4perl;
 
         package Amazon::S3;    ## no critic (Modules::ProhibitMultiplePackages)
+        Amazon::S3->unimport(':all');
         Log::Log4perl->import(qw(:easy));
 
         1;
@@ -1229,10 +1206,9 @@ L<Amazon::S3> module this code:
 You should be ensure that you already 'used' or 'required' L<Amazon::S3>,
 so placeholders in place.
 
-=item 'my @closures_names = qw{TRACE DEBUG INFO WARN ERROR FATAL ALWAYS ...'
+=item 'Amazon::S3::Log::Placeholders->unimport(":all");'
 
-Not all of them are used, but this subroutine is universal
-and undefine all 'easy' closures that can be used by Log::Log4perl.
+You can use also C<no Amazon::S3::Log::Placeholders ':all'> for run this in the C<BEGIN> block
 
 =item 'package Amazon::S3;    ## no critic (Modules::ProhibitMultiplePackages)'
 
@@ -1247,14 +1223,14 @@ You do not need require L<Log::Log4perl> if you 'use' it above in your own modul
 You can combine with L<Amazon::S3::Buckets>:
 
     ...
-    easy_closure_placehoderls_cleanup(qw{Amazon::S3 Amazon::S3::Bucket});
-
     eval {
         require Log::Log4perl;
 
         package Amazon::S3;    ## no critic (Modules::ProhibitMultiplePackages)
+        Amazon::S3::Log::Placeholders->unimport(':all');
         Log::Log4perl->import(qw(:easy));
         package Amazon::S3::Bucket;    ## no critic (Modules::ProhibitMultiplePackages)
+        Amazon::S3::Log::Placeholders->unimport(':all');
         Log::Log4perl->import(qw(:easy));
 
         1;
