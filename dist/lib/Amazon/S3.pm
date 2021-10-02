@@ -1173,6 +1173,94 @@ on a shared system might leak that information to another user. Be careful.
 
 =back
 
+=head1 DIAGNOSTICS
+
+Out of the box module does log nothing, only croaks when it needed.
+But it contains placeholders in B<Log::Log4perl(:easy)> compatible style.
+If you want to get extended logging you can connect
+this module to L<Log::Log4perl>.
+
+(Note that this module does not depend on Log::Log4perl,
+it is only provide compatible interface.)
+
+If you want retrieve more logs you can redefine already placed placeholders:
+B<TRACE DEBUG INFO WARN ERROR>, then let L<Log::Log4perl> reassign them
+to its own closures. To achieve this insert into package where you use
+L<Amazon::S3> module this code:
+
+    use English qw{ -no_match_vars };
+    use Amazon::S3;
+    sub easy_closure_placehoderls_cleanup {
+        my @packages_names = @_;
+        my @closures_names = qw{
+          TRACE DEBUG INFO WARN ERROR FATAL ALWAYS
+          LOGCROAK LOGCLUCK LOGCARP LOGCONFESS
+          LOGDIE LOGEXIT LOGWARN
+        };
+        eval {
+            for my $package_name (@packages_names) {
+                foreach my $sub (@closures_names) {
+                    undef &{"$package_name\::$sub"};
+                }
+            }
+            1;
+        } || croak $EVAL_ERROR;
+        return 1;
+    }
+    easy_closure_placehoderls_cleanup(qw{Amazon::S3});
+
+    eval {
+        require Log::Log4perl;
+
+        package Amazon::S3;    ## no critic (Modules::ProhibitMultiplePackages)
+        Log::Log4perl->import(qw(:easy));
+
+        1;
+    } || croak $EVAL_ERROR;
+
+    Log::Log4perl->easy_init();
+    # or if you prefer use full power of Log::Log4perl:
+    # Log::Log4perl->init('path-to-your-log4perl-conf');
+
+=head3 Notes:
+
+=item 'use Amazon::S3;'
+
+You should be ensure that you already 'used' or 'required' L<Amazon::S3>,
+so placeholders in place.
+
+=item 'my @closures_names = qw{TRACE DEBUG INFO WARN ERROR FATAL ALWAYS ...'
+
+Not all of them are used, but this subroutine is universal
+and undefine all 'easy' closures that can be used by Log::Log4perl.
+
+=item 'package Amazon::S3;    ## no critic (Modules::ProhibitMultiplePackages)'
+
+If you do not have package declaration above, you may be want to remove C<## no critic> directive.
+
+=item 'require Log::Log4perl;'
+
+You do not need require L<Log::Log4perl> if you 'use' it above in your own module
+
+=head3 About Amazon::S3::Bucket
+
+You can combine with L<Amazon::S3::Buckets>:
+
+    ...
+    easy_closure_placehoderls_cleanup(qw{Amazon::S3 Amazon::S3::Bucket});
+
+    eval {
+        require Log::Log4perl;
+
+        package Amazon::S3;    ## no critic (Modules::ProhibitMultiplePackages)
+        Log::Log4perl->import(qw(:easy));
+        package Amazon::S3::Bucket;    ## no critic (Modules::ProhibitMultiplePackages)
+        Log::Log4perl->import(qw(:easy));
+
+        1;
+    } || croak $EVAL_ERROR;
+    ...
+
 =head1 TO DO
 
 =over
