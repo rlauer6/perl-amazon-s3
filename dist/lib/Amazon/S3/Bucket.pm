@@ -1,515 +1,363 @@
 package Amazon::S3::Bucket;
 use strict;
 use warnings;
-use Carp;
+
+use Amazon::S3::Constants
+  qw{ :booleans :chars :reftypes :aws_prefixes :http_methods :http_codes };
+use Amazon::S3::Log::Placeholders qw{ :debug :errors :carp };
+use Data::Dumper;
+use Digest::MD5 qw{ md5 md5_hex };
+use Digest::MD5::File qw{ file_md5_hex };
+use English qw{ -no_match_vars };
 use File::stat;
 use IO::File;
-use Digest::MD5 qw(md5 md5_hex);
-use Digest::MD5::File qw(file_md5 file_md5_hex);
 use MIME::Base64;
-use XML::LibXML;
-use Data::Dumper;
-use Amazon::S3::Log::Placeholders qw{:debug :errors :carp};
 
 use base qw(Class::Accessor::Fast);
+__PACKAGE__->follow_best_practice;
 __PACKAGE__->mk_accessors(qw(bucket creation_date account));
 
+our $VERSION = '1.00';
+
+##############################################################################
 sub new {
-    my $class = shift;
-    my $self  = $class->SUPER::new(@_);
-    LOGCROAK 'no bucket'  unless $self->bucket;
-    LOGCROAK 'no account' unless $self->account;
-    INFO 'self crealed, leave "new"';
-    TRACE sub{ return 'self:', Dumper $self };
-    return $self;
-}
+  my $class = shift;
+  my $self  = $class->SUPER::new(@_);
 
+  LOGCROAK 'no bucket'  if !$self->get_bucket();
+  LOGCROAK 'no account' if !$self->get_account();
+  INFO 'self created, leave "new"';
+  TRACE sub { return 'self:', Dumper $self };
+
+  return $self;
+} ## end sub new
+
+##############################################################################
 sub _uri {
-    my ($self, $key) = @_;
-    TRACE 'Entering to "_uri", key: ', $key // q{};
-    my $uri = ($key)
-      ? $self->bucket . "/" . $self->account->_urlencode($key)
-      : $self->bucket . "/";
-    DEBUG 'uri: ', $uri;
-    return $uri;
-}
+  my ( $self, $key ) = @_;
+  TRACE 'Entering to "_uri", key: ', $key // $EMPTY;
+  my $uri
+    = ($key)
+    ? $self->get_bucket() . $SLASH_CHAR . Amazon::S3::Utils::urlencode($key)
+    : $self->get_bucket() . $SLASH_CHAR;
+  DEBUG 'uri: ', $uri;
 
+  return $uri;
+} ## end sub _uri
+
+##############################################################################
 # returns bool
 sub add_key {
-    my ($self, $key, $value, $conf) = @_;
-    LOGCROAK 'must specify key' unless $key && length $key;
-    DEBUG 'Entering to "add_key", key: ', $key;
+  my ( $self, $args ) = @_;
+  LOGCROAK 'must specify arguments as hash ref' if ref $args ne $HASH;
 
-    if ($conf->{acl_short}) {
-        TRACE 'ACL presents, validate it: ', $conf->{acl_short};
-        $self->account->_validate_acl_short($conf->{acl_short});
-        $conf->{'x-amz-acl'} = $conf->{acl_short};
-        delete $conf->{acl_short};
-    }
+  my $key      = $args->{'key'} || LOGCROAK 'key is required';
+  my $headers  = $args->{'headers'};
+  my $data     = $args->{'data'};
+  my $filename = $args->{'filename'};
+  LOGCROAK 'must specify either data or filename' if !( $data || $filename );
+  LOGCROAK 'cannot provide both data and filename' if $data && $filename;
+  LOGCROAK 'must specify data as ref to scalar' if ref $data ne $SCALAR;
 
-    if (ref($value) eq 'SCALAR') {
-        DEBUG 'value is SCALAR, treat it like file: ', ${ $value };
-        my $md5_hex = file_md5_hex($$value);
-        TRACE 'md5_hex: ', $md5_hex;
-        my $md5 = pack( 'H*', $md5_hex );
-        my $md5_base64 = encode_base64($md5);
-        chomp $md5_base64;
-        TRACE 'md5_base64: ', $md5_base64;
+  DEBUG 'Entering to "add_key", key: ', $key;
 
-        $conf->{'Content-MD5'} = $md5_base64;
+  if ( $headers->{'acl_short'} ) {
+    TRACE 'ACL presents, validate it: ', $headers->{'acl_short'};
+    Amazon::S3::Utils::validate_acl_short( $headers->{'acl_short'} );
+    $headers->{$AMAZON_ACL} = $headers->{'acl_short'};
+    delete $headers->{'acl_short'};
+  } ## end if ( $headers->{'acl_short'...})
 
-        $conf->{'Content-Length'} ||= -s $$value;
-        TRACE 'Content-Length: ', $conf->{'Content-Length'};
+  my $response;
+  if ($filename) {
+    LOGCROAK "file $filename not found or not readable" if !-r $filename;
+    DEBUG 'value is SCALAR, treat it like file: ', $filename;
+    my $md5_hex = file_md5_hex($filename);
+    TRACE 'md5_hex: ', $md5_hex;
+    my $md5 = pack( 'H*', $md5_hex );
+    my $md5_base64 = encode_base64($md5);
+    chomp $md5_base64;
+    TRACE 'md5_base64: ', $md5_base64;
 
-        $value = _content_sub($$value);
-    }
-    else {
-        DEBUG 'value is not reference, just plain data';
-        $conf->{'Content-Length'} ||= length $value;
-        TRACE 'Content-Length: ', $conf->{'Content-Length'};
+    $headers->{'Content-MD5'} = $md5_base64;
 
-        my $md5        = md5($value);
-        my $md5_hex    = unpack( 'H*', $md5 );
-        TRACE 'md5_hex: ', $md5_hex;
-        my $md5_base64 = encode_base64($md5);
-        TRACE 'md5_base64: ', $md5_base64;
-
-        $conf->{'Content-MD5'} = $md5_base64;
-    }
+    #$headers->{'Content-Length'} ||= -s $filename;
+    #TRACE 'Content-Length: ', $headers->{'Content-Length'};
 
     # If we're pushing to a bucket that's under DNS flux, we might get a 307
     # Since LWP doesn't support actually waiting for a 100 Continue response,
     # we'll just send a HEAD first to see what's going on
 
-    if (ref($value)) {
-        DEBUG "Call _send_request_expect_nothing_probed for $key via PUT";
-        my $response = $self->account->_send_request_expect_nothing_probed('PUT',
-            $self->_uri($key), $conf, $value);
-        TRACE sub{ return 'response: ', Dumper $response };
-        return $response;
-    }
-    else {
-        DEBUG "Call _send_request_expect_nothing for $key via PUT";
-        my $response = $self->account->_send_request_expect_nothing('PUT',
-            $self->_uri($key), $conf, $value);
-        TRACE sub{ return 'response: ', Dumper $response };
-        return $response;
-    }
-}
+    DEBUG "Call send_request_expect_nothing for $key via PUT";
+    $response = $self->get_account()->send_request_expect_nothing(
+      method   => $PUT,
+      path     => $self->_uri($key),
+      headers  => $headers,
+      filename => $data,
+    );
+  } ## end if ($filename)
+  else {
+    DEBUG 'just plain data';
+    #$headers->{'Content-Length'} ||= length ${$data};
+    #TRACE 'Content-Length: ', $headers->{'Content-Length'};
 
-sub add_key_filename {
-    my ($self, $key, $value, $conf) = @_;
-    INFO '"add_key_filename" for key: ', $key // q{};
-    return $self->add_key($key, \$value, $conf);
-}
-
-#
-# Initiate a multipart upload operation
-# This is necessary for uploading files > 5Gb to Amazon S3
-# Returns the Upload ID assigned by Amazon, 
-# This is needed to identify this particular upload in other operations
-#
-sub initiate_multipart_upload {
-    my ($self, $key, $conf) = @_;
-
-    LOGCROAK 'Object key is required' unless $key;
-    INFO '"initiate_multipart_upload" for key: ', $key;
-
-    my $acct = $self->account;
-
-    my $request = $acct->_make_request("POST", $self->_uri($key) . '?uploads', $conf);
-    my $response = $acct->_do_http($request);
-
-    $acct->_croak_if_response_error($response);
-
-    my $r = $acct->_xpc_of_content($response->content);
-
-    DEBUG 'r->{UploadId}: ', $r->{UploadId};
-    return $r->{UploadId};
-}
-
-#
-# Upload a part of a file as part of a multipart upload operation
-# Each part must be at least 5mb (except for the last piece).
-# This returns the Amazon-generated eTag for the uploaded file segment.
-# It is necessary to keep track of the eTag for each part number
-# The complete operation will want a sequential list of all the part 
-# numbers along with their eTags.
-#
-sub upload_part_of_multipart_upload {
-    my ($self, $key, $upload_id, $part_number, $data, $length) = @_;
-
-    LOGCROAK 'Object key is required' unless $key;
-    LOGCROAK 'Upload id is required' unless $upload_id;
-    LOGCROAK 'Part Number is required' unless $part_number;
-    INFO 'Entering upload_part_of_multipart_upload for key: ', $key;
-    TRACE "upload_id: $upload_id, part_number: $part_number";
-
-    my $conf = {};
-    my $acct = $self->account;
-
-    # Make sure length and md5 are set
-    my $md5        = md5($data);
-    my $md5_hex    = unpack( 'H*', $md5 );
+    my $md5 = md5( ${$data} );
+    my $md5_hex = unpack( 'H*', $md5 );
     TRACE 'md5_hex: ', $md5_hex;
     my $md5_base64 = encode_base64($md5);
     TRACE 'md5_base64: ', $md5_base64;
 
-    $conf->{'Content-MD5'} = $md5_base64;
-    $conf->{'Content-Length'} = $length;
-    TRACE 'Content-Length: ', $conf->{'Content-Length'};
+    $headers->{'Content-MD5'} = $md5_base64;
 
-    my $params = "?partNumber=${part_number}&uploadId=${upload_id}";
-    DEBUG 'params: ', $params;
-    my $request = $acct->_make_request("PUT", $self->_uri($key) . $params, $conf, $data);
-    my $response = $acct->_do_http($request);
+    DEBUG "Call send_request_expect_nothing for $key via PUT";
+    $response = $self->get_account()->send_request_expect_nothing(
+      { method  => $PUT,
+        path    => $self->_uri($key),
+        headers => $headers,
+        data    => $data,
+      }
+    );
+  } ## end else [ if ($filename) ]
+  TRACE sub { return 'response: ', Dumper $response };
 
-    $acct->_croak_if_response_error($response);
+  return $response;
+} ## end sub add_key
 
-    # We'll need to save the etag for later when completing the transaction
-    my $etag = $response->header('ETag');
-    DEBUG 'Checking and unquote ETag: ', $etag // q{};
-    if ($etag) {
-        $etag =~ s/^"//;
-        $etag =~ s/"$//;
-    }
-
-    return $etag;
-}
-
-#
-# Inform Amazon that the multipart upload has been completed
-# You must supply a hash of part Numbers => eTags
-# For amazon to use to put the file together on their servers.
-#
-sub complete_multipart_upload {
-    my ($self, $key, $upload_id, $parts_hr) = @_;
-
-    LOGCROAK 'Object key is required' unless $key;
-    LOGCROAK 'Upload id is required' unless $upload_id;
-    LOGCROAK 'Part number => etag hashref is required' unless (ref $parts_hr eq 'HASH');
-
-    # The complete command requires sending a block of xml containing all 
-    # the part numbers and their associated etags (returned from the upload)
-
-    #build XML doc
-    my $xml_doc = XML::LibXML::Document->new('1.0','UTF-8');
-    my $root_element = $xml_doc->createElement('CompleteMultipartUpload');
-    $xml_doc->addChild($root_element);
-    TRACE sub{ return 'xml_doc: ', Dumper $xml_doc };
-
-    # Add the content
-    foreach my $part_num (sort {$a <=> $b} keys %$parts_hr) {
-
-        # For each part, create a <Part> element with the part number & etag
-        my $part = $xml_doc->createElement('Part');
-        $part->appendTextChild('PartNumber' => $part_num);
-        $part->appendTextChild('ETag' => $parts_hr->{$part_num});
-        TRACE "PartNumber: $part_num, ETag: $parts_hr->{$part_num}";
-        $root_element->addChild($part);
-    }
-
-    my $content    = $xml_doc->toString;
-    my $md5        = md5($content);
-    my $md5_base64 = encode_base64($md5);
-    chomp $md5_base64;
-    TRACE 'md5_base64: ', $md5_base64;
-
-    my $conf = {
-        'Content-MD5'    => $md5_base64,
-        'Content-Length' => length $content,
-        'Content-Type'   => 'application/xml'
-    };
-    TRACE sub{ return 'conf: ', Dumper $conf };
-
-    my $acct = $self->account;
-    my $params = "?uploadId=${upload_id}";
-    TRACE 'params: ', $params;
-    my $request = $acct->_make_request("POST", $self->_uri($key) . $params, $conf, $content);
-    my $response = $acct->_do_http($request);
-
-    $acct->_croak_if_response_error($response);
-
-    return 1;
-}
-
-#
-# Stop a multipart upload
-#
-sub abort_multipart_upload {
-    my ($self, $key, $upload_id) = @_;
-
-    LOGCROAK 'Object key is required' unless $key;
-    LOGCROAK 'Upload id is required' unless $upload_id;
-
-    my $acct = $self->account;
-    my $params = "?uploadId=${upload_id}";
-    TRACE 'params: ', $params;
-    my $request = $acct->_make_request("DELETE", $self->_uri($key) . $params);
-    my $response = $acct->_do_http($request);
-
-    $acct->_croak_if_response_error($response);
-
-    return 1;
-}
-
-#
-# List all the uploaded parts for an ongoing multipart upload
-# It returns the block of XML returned from Amazon
-#
-sub list_multipart_upload_parts {
-    my ($self, $key, $upload_id, $conf) = @_;
-
-    LOGCROAK 'Object key is required' unless $key;
-    LOGCROAK 'Upload id is required' unless $upload_id;
-
-    my $acct = $self->account;
-    my $params = "?uploadId=${upload_id}";
-    TRACE 'params: ', $params;
-    my $request = $acct->_make_request("GET", $self->_uri($key) . $params, $conf);
-    my $response = $acct->_do_http($request);
-
-    $acct->_croak_if_response_error($response);
-
-    # Just return the XML, let the caller figure out what to do with it
-    return $response->content;
-}
-
-#
-# List all the currently active multipart upload operations
-# Returns the block of XML returned from Amazon
-#
-sub list_multipart_uploads {
-    my ($self, $conf) = @_;
-
-    my $acct = $self->account;
-    my $params = '?uploads';
-    TRACE 'params: ', $params;
-    my $request = $acct->_make_request("GET", $self->_uri() . $params, $conf);
-    my $response = $acct->_do_http($request);
-
-    $acct->_croak_if_response_error($response);
-
-    # Just return the XML, let the caller figure out what to do with it
-    return $response->content;
-}
-
+##############################################################################
 sub head_key {
-    my ($self, $key) = @_;
-    INFO 'head_key for key: ', $key // q{};
-    return $self->get_key($key, "HEAD");
-}
+  my ( $self, $args ) = @_;
+  LOGCROAK 'must specify arguments as hash ref' if ref $args ne $HASH;
+  INFO 'head_key for key: ', $args->{'key'} // $EMPTY;
+  $args->{'method'} = $HEAD;
+  my $response = $self->get_key($args);
+  return $response;
+} ## end sub head_key
 
+##############################################################################
 sub get_key {
-    my ($self, $key, $method, $filename) = @_;
-    INFO '"get_key" for key: ', $key // q{}, ' via: ', $method // q{};
-    $method ||= "GET";
-    $filename = $$filename if ref $filename;
-    TRACE "method: $method, filename: ", $filename // q{};
-    my $acct = $self->account;
+  #my ( $self, $key, $method, $filename ) = @_;
+  my ( $self, $args ) = @_;
+  LOGCROAK 'must specify arguments as hash ref' if ref $args ne $HASH;
+  my $key = $args->{'key'};
+  my $method = $args->{'method'} || $GET;
+  INFO '"get_key" for key: ', $key // $EMPTY, ' via: ', $method // $EMPTY;
 
-    my $request = $acct->_make_request($method, $self->_uri($key), {});
-    my $response = $acct->_do_http($request, $filename);
+  my $filename
+    = ref $args->{'filename'}
+    ? ${ $args->{'filename'} }
+    : $args->{'filename'};
+  TRACE "method: $method, filename: ", $filename // $EMPTY;
+  my $account = $self->get_account();
 
-    if ($response->code == 404) {
-        INFO 'Key: ', $key // q{}, ' not found (404)!';
-        return undef;
+  my $data     = $EMPTY;
+  my $response = $account->send_request(
+    { method   => $method,
+      path     => $self->_uri($key),
+      filename => $filename,
+      data     => \$data,
     }
+  );
 
-    $acct->_croak_if_response_error($response);
+  if ( $response->code == $CODE_404 ) {
+    INFO 'Key: ', $key // $EMPTY, ' not found (404)!';
+    return undef;
+  }
 
-    my $etag = $response->header('ETag');
-    TRACE 'Checking and unquote ETag: ', $etag // q{};
-    if ($etag) {
-        $etag =~ s/^"//;
-        $etag =~ s/"$//;
-    }
+  $account->_croak_if_response_error($response);
 
-    my $return = {
-        content_length => $response->content_length || 0,
-        content_type   => $response->content_type,
-        etag           => $etag,
-        value          => $response->content,
-    };
+  my $etag = $response->header('ETag');
+  TRACE 'Checking and unquote ETag: ', $etag // $EMPTY;
+  if ($etag) {
+    $etag =~ s/\A"//xms;
+    $etag =~ s/"\z//xms;
+  }
 
-    # Validate against data corruption by verifying the MD5
-    if ($method eq 'GET') {
-        my $md5 = ($filename and -f $filename) ? file_md5_hex($filename) : md5_hex($return->{value});
-        TRACE 'md5 for verifying data corruption:', $md5 // q{};
-        LOGCROAK "Computed and Response MD5's do not match:  $md5 : $etag" unless ($md5 eq $etag);
-    }
+  my $return = {
+    content_length => $response->content_length() || 0,
+    content_type   => $response->content_type(),
+    etag           => $etag,
+    value          => $response->content(),
+  };
 
-    foreach my $header ($response->headers->header_field_names) {
-        next unless $header =~ /x-amz-meta-/i;
-        $return->{lc $header} = $response->header($header);
-    }
-    TRACE sub{ return 'return: ', Dumper $return };
+  # Validate against data corruption by verifying the MD5
+  if ( $method eq $GET ) {
+    my $md5 = ( $filename and -f $filename )    # is file and exists
+      ? file_md5_hex($filename)
+      : md5_hex( $return->{value} );
+    TRACE 'md5 for verifying data corruption:', $md5 // $EMPTY;
+    LOGCROAK "Computed and Response MD5's do not match:  $md5 : $etag"
+      if ( $md5 ne $etag );
+  } ## end if ( $method eq $GET )
 
-    return $return;
+  foreach my $header ( $response->headers->header_field_names ) {
+    next if $header !~ /$METADATA_PREFIX/i;
+    $return->{ lc $header } = $response->header($header);
+  }
+  TRACE sub { return 'return: ', Dumper $return };
 
-}
+  return $return;
+} ## end sub get_key
 
+##############################################################################
 sub get_key_filename {
-    my ($self, $key, $method, $filename) = @_;
-    INFO '"get_key_filename" for key: ', $key // q{};
-    TRACE 'initial filename: ', $filename // q{};
-    $filename = $key unless defined $filename;
-    DEBUG 'filename: ', $filename;
-    return $self->get_key($key, $method, \$filename);
-}
+  #my ( $self, $key, $method, $filename ) = @_;
+  my ( $self, $args ) = @_;
+  LOGCROAK 'must specify arguments as hash ref' if ref $args ne $HASH;
+  INFO '"get_key_filename" for key: ', $args->{'key'}      // $EMPTY;
+  TRACE 'initial filename: ',          $args->{'filename'} // $EMPTY;
 
+  defined $args->{'filename'} or $args->{'filename'} = $args->{'key'};
+  DEBUG 'filename: ', $args->{'filename'};
+
+  my $response = $self->get_key($args);
+
+  return $response;
+} ## end sub get_key_filename
+
+##############################################################################
 # returns bool
 sub delete_key {
-    my ($self, $key) = @_;
-    LOGCROAK 'must specify key' unless $key && length $key;
-    INFO '"delete_key" for key: ', $key;
-    return $self->account->_send_request_expect_nothing('DELETE',
-        $self->_uri($key), {});
-}
+  my ( $self, $args ) = @_;
+  LOGCROAK 'must specify arguments as hash ref' if ref $args ne $HASH;
+  my $key = $args->{'key'} || LOGCROAK 'path is required';
+  INFO '"delete_key" for key: ', $key;
 
+  my $response = $self->get_account()->send_request_expect_nothing(
+    { method => $DELETE,
+      path   => $self->_uri($key),
+    }
+  );
+
+  return $response;
+} ## end sub delete_key
+
+##############################################################################
 sub delete_bucket {
-    my $self = shift;
-    LOGCROAK 'Unexpected arguments' if @_;
-    INFO 'Entering "delete_bucket"';
-    return $self->account->delete_bucket($self);
-}
+  my ($self) = @_;
+  LOGCROAK 'Unexpected arguments' if @_;
+  INFO 'Entering "delete_bucket"';
 
+  my $response = $self->get_account()->delete_bucket($self);
+
+  return $response;
+} ## end sub delete_bucket
+
+##############################################################################
 sub list {
-    my $self = shift;
-    my $conf = shift || {};
-    $conf->{bucket} = $self->bucket;
-    INFO '"list" for bucket: ', $conf->{bucket};
-    TRACE sub{ return 'conf:', Dumper $conf };
-    return $self->account->list_bucket($conf);
-}
+  my ( $self, $args ) = @_;
+  $args ||= {};
+  $args->{'bucket'} = $self->get_bucket();
+  INFO '"list" for bucket: ', $args->{'bucket'};
+  TRACE sub { return 'conf:', Dumper $args };
+  my $response = $self->get_account()->list_bucket($args);
 
+  return $response;
+} ## end sub list
+
+##############################################################################
 sub list_all {
-    my $self = shift;
-    my $conf = shift || {};
-    $conf->{bucket} = $self->bucket;
-    INFO '"list_all" for bucket: ', $conf->{bucket};
-    TRACE sub{ return 'conf:', Dumper $conf };
-    return $self->account->list_bucket_all($conf);
-}
+  my ( $self, $args ) = @_;
+  LOGCROAK 'must specify arguments as hash ref' if ref $args ne $HASH;
+  $args ||= {};
+  $args->{'bucket'} = $self->get_bucket();
+  INFO '"list_all" for bucket: ', $args->{'bucket'};
+  TRACE sub { return 'conf:', Dumper $args };
+  my $response = $self->get_account()->list_bucket_all($args);
 
+  return $response;
+} ## end sub list_all
+
+##############################################################################
 sub get_acl {
-    my ($self, $key) = @_;
-    INFO '"get_acl" for key: ', $key // q{};
-    my $acct = $self->account;
+  my ( $self, $args ) = @_;
+  LOGCROAK 'must specify arguments as hash ref' if ref $args ne $HASH;
+  my $key = $args->{'key'};
+  INFO '"get_acl" for key: ', $key // $EMPTY;
+  my $account = $self->get_account();
 
-    my $request = $acct->_make_request('GET', $self->_uri($key) . '?acl', {});
-    my $response = $acct->_do_http($request);
-
-    if ($response->code == 404) {
-        INFO 'Key: ', $key // q{}, ' not found (404)!';
-        return undef;
+  my $response = $account->send_request(
+    { method => $GET,
+      key    => $self->_uri($key) . '?acl'
     }
+  );
 
-    $acct->_croak_if_response_error($response);
+  if ( $response->code == $CODE_404 ) {
+    INFO 'Key: ', $key // $EMPTY, ' not found (404)!';
+    return undef;
+  }
 
-    DEBUG 'response->content: ', $response->content;
-    return $response->content;
-}
+  $account->_croak_if_response_error($response);
 
+  my $content = $response->content();
+  DEBUG 'response->content: ', $content;
+
+  return $content;
+} ## end sub get_acl
+
+##############################################################################
 sub set_acl {
-    my ($self, $conf) = @_;
-    $conf ||= {};
-    INFO 'Entering set_acl';
-    TRACE sub{ return 'conf: ', Dumper $conf };
+  my ( $self, $args ) = @_;
+  $args ||= {};
+  INFO 'Entering set_acl';
+  TRACE sub { return 'conf: ', Dumper $args };
 
-    unless ($conf->{acl_xml} || $conf->{acl_short}) {
-        LOGCROAK 'need either acl_xml or acl_short';
-    }
+  if ( !$args->{'acl_xml'} && !$args->{'acl_short'} ) {
+    LOGCROAK 'need either "acl_xml" or "acl_short"';
+  }
 
-    if ($conf->{acl_xml} && $conf->{acl_short}) {
-        LOGCROAK 'cannot provide both acl_xml and acl_short';
-    }
+  if ( $args->{'acl_xml'} && $args->{'acl_short'} ) {
+    LOGCROAK 'cannot provide both "acl_xml" and "acl_short"';
+  }
 
-    my $path = $self->_uri($conf->{key}) . '?acl';
-    DEBUG 'path: ', $path;
+  my $path = $self->_uri( $args->{'key'} ) . '?acl';
+  DEBUG 'path: ', $path;
 
-    my $hash_ref =
-        ($conf->{acl_short})
-      ? {'x-amz-acl' => $conf->{acl_short}}
-      : {};
-    TRACE sub{ return 'hash_ref: ', Dumper $hash_ref };
+  my $headers
+    = ( $args->{'acl_short'} )
+    ? { $AMAZON_ACL => $args->{'acl_short'} }
+    : {};
+  TRACE sub { return 'hash_ref: ', Dumper $headers };
 
-    my $xml = $conf->{acl_xml} || '';
-    TRACE sub{ return 'xml: ', Dumper $xml };
+  my $xml = $args->{'acl_xml'} || $EMPTY;
+  TRACE sub { return 'xml: ', Dumper $xml };
 
-    return $self->account->_send_request_expect_nothing('PUT', $path,
-        $hash_ref, $xml);
+  my $response = $self->get_account()->send_request_expect_nothing(
+    method  => $PUT,
+    key     => $path,
+    headers => $headers,
+    data    => \$xml,
+  );
 
-}
+  return $response;
+} ## end sub set_acl
 
+##############################################################################
 sub get_location_constraint {
-    my ($self) = @_;
-    INFO 'Entering get_location_constraint';
+  my ($self) = @_;
+  INFO 'Entering get_location_constraint';
 
-    my $xpc =
-      $self->account->_send_request('GET', $self->bucket . '/?location');
-    return undef unless $xpc && !$self->account->_remember_errors($xpc);
-    TRACE sub { return 'xpc: ', Dumper $xpc };
-
-    my $lc = $xpc->{content};
-    if (defined $lc && $lc eq '') {
-        $lc = undef;
+  my $xpc = $self->get_account()->send_request(
+    { method => $GET,
+      path   => $self->get_bucket() . '/?location',
     }
-    DEBUG 'lc: ', $lc // 'UNDEF', ', leave "get_location_constraint"';
-    return $lc;
-}
+  );
+  return undef if !$xpc || $self->get_account()->_remember_errors($xpc);
+  TRACE sub { return 'xpc: ', Dumper $xpc };
+
+  my $lc = $xpc->{'content'};
+  if ( defined $lc && $lc eq $EMPTY ) {
+    $lc = undef;
+  }
+  DEBUG 'lc: ', $lc // 'UNDEF', ', leave "get_location_constraint"';
+
+  return $lc;
+} ## end sub get_location_constraint
 
 # proxy up the err requests
 
-sub err { $_[0]->account->err }
-
-sub errstr { $_[0]->account->errstr }
-
-sub _content_sub {
-    my $filename  = shift;
-    my $stat      = stat($filename);
-    my $remaining = $stat->size;
-    my $blksize   = $stat->blksize || 4096;
-
-    LOGCROAK "$filename not a readable file with fixed size"
-      unless -r $filename
-          and $remaining;
-    INFO '"_content_sub" for file: ', $filename;
-
-    my $fh = IO::File->new($filename, 'r')
-      or LOGCROAK "Could not open $filename: $!";
-    $fh->binmode;
-
-    TRACE "File '$filename' was opened (with binmode)";
-    return sub {
-        my $buffer;
-
-        # upon retries the file is closed and we must reopen it
-        unless ($fh->opened) {
-            INFO "Reopen file $filename inside closure";
-
-            $fh = IO::File->new($filename, 'r')
-              or LOGCROAK "Could not open $filename: $!";
-            $fh->binmode;
-            $remaining = $stat->size;
-        }
-
-        unless (my $read = $fh->read($buffer, $blksize)) {
-            LOGCROAK
-              "Error while reading upload content $filename ($remaining remaining) $!"
-              if $! and $remaining;
-            DEBUG "Reach end of file $filename";
-            $fh->close    # otherwise, we found EOF
-              or LOGCROAK "close of upload content $filename failed: $!";
-            TRACE 'Clearing buffer, because LWP expects an empty string on finish';
-            $buffer ||= '';
-        }
-        TRACE 'read bytes: ', length $buffer // q{};
-        $remaining -= length($buffer);
-        DEBUG 'remaining: ', $remaining;
-        return $buffer;
-    };
-}
+##############################################################################
+sub err    { shift->get_account()->err() }
+sub errstr { shift->get_account()->errstr() }
 
 1;
 
