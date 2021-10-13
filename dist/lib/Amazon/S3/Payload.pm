@@ -52,13 +52,13 @@ sub get_size {
   TRACE '_size: ', $size // $EMPTY;
   return $size if defined $size;
 
-  my $data_sref = $self->get_data();
-  if ( ref ${$data_sref} ) {
-    my $filename = ${ ${$data_sref} };
-    my $stat     = stat($filename);      # TODO fail check
-    my $size     = $stat->size;
+  my $filename = $self->get_filename();
+  if ($filename) {
+    my $stat = stat $filename or die "No $filename: $OS_ERROR";   # File::stat
+    $size = $stat->size;
   }
   else {
+    my $data_sref = $self->get_data();
     $size = length ${$data_sref};
   }
   $self->set__size($size);
@@ -74,10 +74,11 @@ sub get_mode {
   TRACE '_mode: ', $mode // $EMPTY;
   return $mode if defined $mode;
 
+  my $size = $self->get_size();
   $mode
     = $self->get_method() eq 'PUT'
     && $self->get_multipart_threshold() > 0
-    && $self->get_size() >= $self->get_multipart_threshold()
+    && $size >= $self->get_multipart_threshold()
     ? 'multipart'
     : 'single';
   $self->set__mode($mode);
@@ -99,7 +100,7 @@ sub get_filehandler {
     if ( !open $fh, q{<}, $filename ) {
       LOGCROAK "Cannot open file $filename, because $OS_ERROR";
     }
-    $fh->binary or LOGCROAK "Cannot binmode to $filename: $OS_ERROR";
+    $fh->binmode or LOGCROAK "Cannot binmode to $filename: $OS_ERROR";
     $fh_type = 'file';
   } ## end if ($filename)
   else {
@@ -141,8 +142,14 @@ sub get_digest {
 ##############################################################################
 sub get_content {
   my ($self) = @_;
-  return $self->get_data();
-}
+  #TRACE 'original "multipart_chunksize": ', $self->{'multipart_chunksize'};
+  #local $self->{'multipart_chunksize'} = 0;
+  #TRACE 'localized "multipart_chunksize": ', $self->{'multipart_chunksize'};
+
+  my ( $data_sref, $data_size ) = $self->get_next_part();
+  TRACE 'Content was read, bytes: ', $data_size;
+  return $data_sref;
+} ## end sub get_content
 
 ##############################################################################
 sub get_next_part {
@@ -154,11 +161,13 @@ sub get_next_part {
   my $buffer = $EMPTY;
   my $chunk  = $EMPTY;
 
-  my $fh = $self->get_filehandler();
-  my $remaining
-    = $remain_payload < $self->get_multipart_chunksize()
-    ? $remain_payload
-    : $self->get_multipart_chunksize();
+  my $fh        = $self->get_filehandler();
+  my $chunksize = $self->get_multipart_chunksize();
+
+  my $remaining = $remain_payload;
+  if ( $chunksize && $remain_payload > $chunksize ) {
+    $remaining = $chunksize;
+  }
   TRACE 'Initial remainig:', $remaining;
   my $read_size = 0;
   my $bytes_to_read

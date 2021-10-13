@@ -94,6 +94,9 @@ sub initiate_multipart_upload {
   my $path    = $context->{'path'} || LOGCROAK 'path is required';
   my $headers = $context->{'headers'};
 
+  ref $headers eq $HASH or $headers = {};
+  $headers->{'Content-Length'} = 0;
+
   INFO '"initiate_multipart_upload" for key: ', $path;
 
   my $account = $self->get_account();

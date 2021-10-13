@@ -3,6 +3,7 @@ use strict;
 use warnings;
 
 use Amazon::S3::Constants qw{ :all };
+use Amazon::S3::Error;
 use Amazon::S3::Log::Placeholders qw{:debug :errors :carp};
 use Data::Dumper;
 
@@ -22,7 +23,7 @@ sub new {
   LOGCROAK 'Need url'     if !defined $self->get_url();
   LOGCROAK 'Need headers' if !defined $self->get_headers();
 
-  my $request = HTTP::Request->new( # create instance
+  my $request = HTTP::Request->new(    # create instance
     $self->get_method(),
     $self->get_url(),
     $self->get_headers(),
@@ -45,14 +46,18 @@ sub send_content {
 
   INFO '_do_http with request and filename: ', $filename || 'EMPTY';
 
+  # convenient time to reset any error conditions
+  Amazon::S3::Error->err(undef);
+  Amazon::S3::Error->errstr(undef);
+
   my $response;
 
-  $request->content(${ $payload->get_content() } );
+  $request->content( ${ $payload->get_content() } );
   $response = $self->get_ua()->request( $request, $filename );
   TRACE sub { return 'First Response: ', Dumper $response };
 
   return $response;
-} ## end sub send_request
+} ## end sub send_content
 
 1;
 

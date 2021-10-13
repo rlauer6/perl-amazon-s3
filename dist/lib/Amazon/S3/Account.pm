@@ -5,6 +5,7 @@ use warnings;
 use Amazon::S3::Constants
   qw{ :booleans :chars :reftypes :http_methods :ua_defaults :aws_defaults :aws_regexps };
 use Amazon::S3::Datetime;
+use Amazon::S3::Error;
 use Amazon::S3::Headers;
 use Amazon::S3::Log::Placeholders qw{ :debug :errors :carp };
 use Amazon::S3::Multipart;
@@ -129,6 +130,9 @@ sub send_request {
   else {
     LOGCROAK 'Unknown mode: ', $payload_mode;
   }
+  if ($response->code !~ /^2\d\d$/) {
+    $self->_remember_errors( $response->content, 1 );
+  }
 
   return $response;
 } ## end sub send_request
@@ -231,7 +235,7 @@ sub send_request_expect_nothing {
   return $TRUE if $response->code =~ /^2\d\d$/;
 
   # anything else is a failure, and we save the parsed result
-  #$self->_remember_errors( $response->content, 1 );
+  $self->_remember_errors( $response->content, 1 );
   return $FALSE;
 } ## end sub send_request_expect_nothing
 
@@ -239,9 +243,9 @@ sub send_request_expect_nothing {
 sub _croak_if_response_error {
   my ( $self, $response ) = @_;
   INFO '_croak_if_response_error';
-  unless ( $response->code =~ /^2\d\d$/ ) {
-    $self->err("network_error");
-    $self->errstr( $response->status_line );
+  if ( $response->code !~ /^2\d\d$/ ) {
+    Amazon::S3::Error->err("network_error");
+    Amazon::S3::Error->errstr( $response->status_line );
     LOGCROAK 'Amazon::S3: Amazon responded with '
       . $response->status_line . "\n";
   } ## end unless ( $response->code =~...)
@@ -270,10 +274,15 @@ sub _remember_errors {
 
   if ( !ref $src && $src !~ m/^[[:space:]]*</ ) {    # if not xml
     ( my $code = $src ) =~ s/^[[:space:]]*\([0-9]*\).*$/$1/;
-    $self->err($code);
-    $self->errstr($src);
-    ERROR "#: $code, str: $src";
-    return $TRUE;
+    Amazon::S3::Error->err($code);
+    Amazon::S3::Error->errstr($src);
+    if ($code) {
+      ERROR "#: $code, str: $src";
+      return $TRUE;
+    }
+    else {
+      return $FALSE;
+    }
   } ## end if ( !ref $src && $src...)
 
   my $resp
@@ -282,14 +291,14 @@ sub _remember_errors {
     : $self->_xpc_of_content( $src, $keep_root );
 
   # apparently buckets() does not keep_root
-  if ( $resp->{Error} ) {
-    $resp = $resp->{Error};
+  if ( $resp->{'Error'} ) {
+    $resp = $resp->{'Error'};
   }
 
-  if ( $resp->{Code} ) {
-    $self->err( $resp->{Code} );
-    $self->errstr( $resp->{Message} );
-    ERROR $resp->{Code}, ', str:', $resp->{Message};
+  if ( $resp->{'Code'} ) {
+    Amazon::S3::Error->err( $resp->{'Code'} );
+    Amazon::S3::Error->errstr( $resp->{'Message'} );
+    ERROR $resp->{Code}, ', str:', $resp->{'Message'};
     return $TRUE;
   } ## end if ( $resp->{Code} )
 

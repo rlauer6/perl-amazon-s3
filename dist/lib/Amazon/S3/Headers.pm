@@ -80,7 +80,7 @@ sub make_host_url_and_path {
   LOGCROAK 'must specify arguments as hash ref' if ref $context ne $HASH;
 
   my $host = $context->{'host'} || LOGCROAK 'must specify host';
-  my $path = $context->{'path'} || LOGCROAK 'must specify path';
+  my $path = $context->{'path'} // LOGCROAK 'must specify path';
   my $secure = $context->{'secure'} // 0;
   DEBUG "initial host: $host, initial path: $path";
 
@@ -249,7 +249,7 @@ sub _get_canonical_query_string {
   my $canonical_query_string = $EMPTY;
 
   my $uri         = $context->{'uri'} || LOGCROAK 'uri is required';
-  my $query       = $uri->query();
+  my $query       = $uri->query() // $EMPTY;
   my @query_pairs = split /$AMP_CHAR/xms, $query;
   my %params      = ();
   foreach my $q_pair (@query_pairs) {
