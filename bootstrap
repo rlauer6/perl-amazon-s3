@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# -*- mode: sh; -*
+
+function _bump {
+    version=$(mktemp)
+    eval $(echo perl -ne "'my \$p=$1; my @v=split /\./; \$v[2]=0 if \$p == 1; \$v[1] = \$v[2] = 0 unless \$p; \$v[\$p]++; print join(\".\", @v);'" VERSION) > $version
+    test -e "$version" && mv $version VERSION
+
+    echo -n "rebuilding for VERSION: $(cat VERSION)..."
+    
+    if test -x bootstrap; then
+        if ./bootstrap && ./configure; then
+            make clean
+            make
+        fi
+    fi
+}
+
+function bump {
+    [ "$1" = "major" ] && _bump 0 && exit;
+    [ "$1" = "minor" ] && _bump 1 && exit;
+    [ "$1" = "release" ] && _bump 2 && exit;
+}
+
+function bump_major {
+    bump 0
+}
+
+function bump_minor {
+    bump 1
+}
+
+function bump_release {
+    bump 2
+}
+
+
+# Usage:
+#   bootstrap [ AUTORECONF_ARG ... ]
+#
+# Example 1:
+#   $ ./bootstrap
+#
+# Example 2:
+#   $ ./bootstrap --verbose
+#
+# Example 3:
+#   $ ./bootstrap --debug
+
+declare -r PROG='bootstrap'
+if [ "$1" = "bump" ]; then
+    bump $2
+    exit
+fi
+
+_run_on_dir=$( cd "$(dirname "$0")" ; pwd -P )
+
+if test $? -ne 0; then
+    printf "${PROG} (ERROR): was unable to determine realpath of prog \"%s\"\n" \
+      "$0" 1>&2
+    exit 1
+fi
+
+# sanity check that our configure.ac file exists
+_configure_ac="${_run_on_dir}/configure.ac"
+test -f "${_configure_ac}" || {
+    printf "${PROG} (ERROR): file does not exist: \"%s\"\n" "${_configure_ac}" 1>&2
+    exit 1
+}
+
+# sanity check that our include dir exists
+_include_dir="${_run_on_dir}/autotools"
+test -d "${_include_dir}" || {
+    printf "${PROG} (ERROR): m4 macro include directory does not exist: \"%s\"\n" \
+      "${_include_dir}" 1>&2
+    exit 1
+}
+
+test -n "$DEBUG" && set -x
+
+# From autoreconf(1):
+#   "The environment  variables  AUTOCONF,  AUTOHEADER,  AUTOMAKE,  ACLOCAL,
+#    AUTOPOINT, LIBTOOLIZE are honored."
+#
+
+# We use these to allow us to easily use the correct versions of the GNU
+# autotools. Note: On some systems, the tools are /only/ installed with their
+# version number suffixes, so the default names, such as 'aclocal' won't work.
+AM_VERSION=$(automake --version | grep "^automake" | awk '{print $4}' | sed 's/^\([0-9]\+\.[0-9]\+\)\.[0-9]\+$/\1/;')
+
+if test "$(which aclocal)"; then
+    export ACLOCAL="aclocal"
+elif test "$(which aclocal-$AM_VERSION)"; then
+    export ACLOCAL="aclocal-$AM_VERSION"
+else
+    echo "no aclocal found"
+    exit 1
+fi
+
+if test "$(which automake)"; then
+    export AUTOMAKE="automake"
+elif test "$(which automake-$AM_VERSION)"; then
+    export AUTOMAKE="automake-$AM_VERSION"
+else
+    echo "no automake found"
+fi
+
+# use the VERSION file in the project to set the PACKAGE_VERSION
+#if test -z "$VERSION"; then
+#    test -e VERSION && VERSION=$(cat VERSION)
+#fi
+
+# --force: consider all files obsolete (ignores timestamps)
+# --warnings=all
+VERSION="$VERSION" autoreconf \
+    "--include=${_include_dir}" \
+    "$@" \
+    --force \
+    -i \
+    "${_configure_ac}"

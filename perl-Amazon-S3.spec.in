@@ -42,15 +42,14 @@ Perl interface to Amazon S3
 %setup -q -n %{pkgname}
 
 %build
-cd dist
-# remove artifacts of the package
-rm lib/Makefile.in
-rm lib/Makefile.am
-perl Makefile.PL
+./configure --prefix=/usr \
+	    --with-perl5libdir \
+            --enable-rpmbuild \
+	    --disable-perldeps
 make
 
 %install
-cd dist
+rm -fr %{buildroot}
 make DESTDIR=%{buildroot} install
 
 %post
