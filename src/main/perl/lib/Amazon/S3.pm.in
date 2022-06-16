@@ -916,19 +916,22 @@ managing Amazon S3 buckets and keys.
 
 =head1 DESCRIPTION
 
-Amazon::S3 provides a portable client interface to Amazon Simple
+C<Amazon::S3> provides a portable client interface to Amazon Simple
 Storage System (S3).
 
 I<This module is rather dated. For a much more robust and modern
 implementation of an S3 interface try C<Net::Amazon::S3>.
-C<Amazon::S3> ostensibley was intended to be a drop-in replacement for
-L<Net:Amazon::S3> that "traded some performance in return for
+C<Amazon::S3> ostensibly was intended to be a drop-in replacement for
+C<Net:Amazon::S3> that "traded some performance in return for
 portability". That statement is no longer accurate as
 C<Net::Amazon::S3> implements much more of the S3 API and may have
-changed the interface in ways that might break your applications.
-This module may still appeal to some that favor simplicity of the
-interface and a lower number of dependencies. Below is the original
-description of the module.>
+changed the interface in ways that might break your
+applications. However, C<Net::Amazon::S3> is today dependent on
+C<Moose> which may in fact level the playing field in terms of
+performance penalties that may have been introduced by
+C<Amazon::S3>. YMMV, however, this module may still appeal to some
+that favor simplicity of the interface and a lower number of
+dependencies. Below is the original description of the module.>
 
 =over 10
 

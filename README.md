@@ -56,19 +56,22 @@ managing Amazon S3 buckets and keys.
 
 # DESCRIPTION
 
-Amazon::S3 provides a portable client interface to Amazon Simple
+`Amazon::S3` provides a portable client interface to Amazon Simple
 Storage System (S3).
 
 _This module is rather dated. For a much more robust and modern
 implementation of an S3 interface try `Net::Amazon::S3`.
-`Amazon::S3` ostensibley was intended to be a drop-in replacement for
-[Net:Amazon::S3](Net:Amazon::S3) that "traded some performance in return for
+`Amazon::S3` ostensibly was intended to be a drop-in replacement for
+`Net:Amazon::S3` that "traded some performance in return for
 portability". That statement is no longer accurate as
 `Net::Amazon::S3` implements much more of the S3 API and may have
-changed the interface in ways that might break your applications.
-This module may still appeal to some that favor simplicity of the
-interface and a lower number of dependencies. Below is the original
-description of the module._
+changed the interface in ways that might break your
+applications. However, `Net::Amazon::S3` is today dependent on
+`Moose` which may in fact level the playing field in terms of
+performance penalties that may have been introduced by
+`Amazon::S3`. YMMV, however, this module may still appeal to some
+that favor simplicity of the interface and a lower number of
+dependencies. Below is the original description of the module._
 
 > Amazon S3 is storage for the Internet. It is designed to
 > make web-scale computing easier for developers. Amazon S3
