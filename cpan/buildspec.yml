@@ -1,0 +1,29 @@
+project:
+  description: "Perl interface to AWS S3 API"
+  author:
+    name: Rob Lauer
+    mailto: rlauer6@comcat.net
+pm_module: Amazon::S3
+dependencies:
+    requires: requires
+    test_requires: test-requires
+    core_modules: yes
+extra-files:
+  - ../ChangeLog
+  - ../README.md
+  - ../README-TESTING.md
+path:
+  pm_module: ../src/main/perl/lib
+  tests: ../src/main/perl/t
+extra: extra-files
+resources:
+  homepage: 'http://github.com/rlauer6/perl-amazon-s3'
+  bugtracker:
+    web: 'http://github.com/rlauer6/perl-amazon-s3/issues'
+    mailto: rlauer6@comcast.net
+  repository:
+    url: 'git://github.com/rlauer6/perl-amazon-s3.git'
+    web: 'http://github.com/rlauer6/perl-amazon-s3'
+    type: 'git'
+
+

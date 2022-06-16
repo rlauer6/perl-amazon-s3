@@ -1,3 +1,5 @@
+autotools/install-sh
+autotools/missing
 *.tar.gz
 *.spec
 config.status
@@ -7,3 +9,5 @@ configure
 config.log
 **/Makefile.in
 Makefile
+src/main/perl/lib/**/*.pm
+**/#*
