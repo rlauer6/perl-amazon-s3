@@ -20,7 +20,7 @@ with additional environment variables described below.
 | `AWS_ACCESS_KEY_ID` | Your AWS access key |
 | `AWS_ACCESS_KEY_SECRET` | Your AWS sekkr1t passkey. Be forewarned that setting this environment variable on a shared system might leak that information to another user. Be careful. |
 | `AWS_SESSION_TOKEN` |  Optional session token. |
-| `S3_HOST` | Defaults to s3.amazonaws.com.  Set this for example if you want to test module against an API compatible service like minio. |
+| `AMAZON_S3_HOST` | Defaults to s3.amazonaws.com.  Set this for example if you want to test the module against an API compatible service like minio. |
 | `AMAZON_S3_SKIP_ACL_TESTS` |  Doesn't matter what you set it to. Just has to be set if you want to skip ACLs tests. |
 | `AMAZON_S3_SKIP_REGION_CONSTRAINT_TEST` |  Doesn't matter what you set it to. Just has to be set if you want to skip region constraint test. |
 | `AMAZON_S3_MINIO` | Doesn't matter what you set it to. Just has to be set if you want to skip tests that would fail on minio. |
@@ -58,7 +58,7 @@ To test regional constraints then, the current test will change the
 name of the bucket if it encounters a 409 error while creating the
 bucket.  The test will then proceed to read the ACLs to determine if
 the constraint was successful. By default, the tests will only create
-bucket in the default region (but it will check that the constraint is
+a bucket in the default region (but it will check that the constraint is
 in place). If you want to test creation of buckets in alternate
 regions in addition to testing in the default region, set the
 environment variable `AMAZON_S3_REGIONS` to one or more comma

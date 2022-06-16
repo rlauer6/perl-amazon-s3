@@ -28,6 +28,7 @@ __PACKAGE__->mk_accessors(
     token
     buffer_size
     credentials
+    dns_bucket_names
     digest
     err
     errstr
@@ -53,12 +54,14 @@ sub new {
 
   my %options = ref $args[0] ? %{ $args[0] } : @args;
 
-  $options{timeout}   //= $DEFAULT_TIMEOUT;
-  $options{secure}    //= $TRUE;
-  $options{host}      //= $DEFAULT_HOST;
-  $options{log_level} //= delete $options{level} || $DEFAULT_LOG_LEVEL;
+  $options{timeout}          //= $DEFAULT_TIMEOUT;
+  $options{secure}           //= $TRUE;
+  $options{host}             //= $DEFAULT_HOST;
+  $options{level}            //= $DEFAULT_LOG_LEVEL;
+  $options{dns_bucket_names} //= $TRUE;
 
-  $options{_region} = delete $options{region};
+  $options{log_level} = delete $options{level};
+  $options{_region}   = delete $options{region};
 
   my $self = $class->SUPER::new( \%options );
 
@@ -74,6 +77,7 @@ sub new {
         $safe_options{aws_secret_access_key} = '****';
         $safe_options{aws_access_key_id}     = '****';
       } ## end if ( $safe_options{aws_secret_access_key...})
+
       return Dumper( [ 'options: ', \%safe_options ] );
     }
   );
@@ -124,7 +128,8 @@ sub region {
     $self->_region( $args[0] );
   } ## end if (@args)
 
-  $self->get_logger->debug( sub { return 'region: ' . $self->_region } );
+  $self->get_logger->debug(
+    sub { return 'region: ' . ( $self->_region // $EMPTY ) } );
 
   if ( $self->_region ) {
     my $host = $self->host;
@@ -490,7 +495,9 @@ sub _make_request {
 
   my $url;
 
-  if ( $path =~ /^([^\/?]+)(.*)/xsm && _is_dns_bucket($1) ) {
+  if ( $path =~ /^([^\/?]+)(.*)/xsm
+    && _is_dns_bucket($1)
+    && $self->dns_bucket_names ) {
     $url = "$protocol://$1.$host$2";
   } ## end if ( $path =~ /^([^\/?]+)(.*)/xsm...)
   else {
@@ -1185,6 +1192,13 @@ Returns false (and fails) if the bucket isn't empty.
 
 Returns true if the bucket is successfully deleted.
 
+=head2 dns_bucket_names
+
+Set or get a boolean that indicates whether to use DNS bucket
+names.
+
+default: true
+
 =head2 list_bucket, list_bucket_v2
 
 List all keys in this bucket.
@@ -1364,6 +1378,23 @@ a real test unless you set these environment variables:
 =item AMAZON_S3_EXPENSIVE_TESTS
 
 Doesn't matter what you set it to. Just has to be set
+
+=item AMAZON_S3_HOST
+
+Sets the host to use for the API service.
+
+default: s3.amazonaws.com
+
+Note that if this value is set, DNS bucket name usage will be disabled
+for testing. Most likely, if you set this variable, you are using a
+mocking service and your bucket names are probably not resolvable. You
+can override this behavior by setting C<AWS_S3_DNS_BUCKET_NAMES> to any
+value.
+
+=item AWS_S3_DSN_BUCKET_NAMES
+
+Set this to any value to override the default behavior of disabling
+DNS bucket names during testing.
 
 =item AWS_ACCESS_KEY_ID 
 

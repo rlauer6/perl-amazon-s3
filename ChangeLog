@@ -18,6 +18,8 @@ Thu Jun 16 11:05:26 2022  Rob Lauer  <rlauer6@comcast.net>
 	- refactoring, perlcritic cleanups
 	- use Amazon::S3::Constants
 	- allow passing credentials class
+	(_make_request): check dns_bucket_names option
+	(dns_bucket_names): new
 	(get_logger): new
 	(level): new
 	(get_credentials): new
@@ -33,6 +35,7 @@ Thu Jun 16 11:05:26 2022  Rob Lauer  <rlauer6@comcast.net>
 	- use Amazon::S3::Constants
 	- perlcritic cleanup
 	- perltidy
+	(_uri): support DNS bucket names
 	(list_v2): new
 	(list_all_v2): new
 	* src/main/perl/lib/Makefile.am: new
@@ -43,6 +46,7 @@ Thu Jun 16 11:05:26 2022  Rob Lauer  <rlauer6@comcast.net>
 	* cpan/requires: new
 	* cpan/test-requires: new
 	* src/main/perl/t/01-api.t
+	- env vars for controlling tests
 	- mv'd from dist/t/01api.t
 	- refactored test
 	- support AWS mocking services

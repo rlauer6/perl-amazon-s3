@@ -296,6 +296,13 @@ Returns false (and fails) if the bucket isn't empty.
 
 Returns true if the bucket is successfully deleted.
 
+## dns\_bucket\_names
+
+Set or get a boolean that indicates whether to use DNS bucket
+names.
+
+default: true
+
 ## list\_bucket, list\_bucket\_v2
 
 List all keys in this bucket.
@@ -465,6 +472,23 @@ a real test unless you set these environment variables:
 - AMAZON\_S3\_EXPENSIVE\_TESTS
 
     Doesn't matter what you set it to. Just has to be set
+
+- AMAZON\_S3\_HOST
+
+    Sets the host to use for the API service.
+
+    default: s3.amazonaws.com
+
+    Note that if this value is set, DNS bucket name usage will be disabled
+    for testing. Most likely, if you set this variable, you are using a
+    mocking service and your bucket names are probably not resolvable. You
+    can override this behavior by setting `AWS_S3_DNS_BUCKET_NAMES` to any
+    value.
+
+- AWS\_S3\_DSN\_BUCKET\_NAMES
+
+    Set this to any value to override the default behavior of disabling
+    DNS bucket names during testing.
 
 - AWS\_ACCESS\_KEY\_ID 
 

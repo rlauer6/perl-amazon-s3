@@ -29,6 +29,5 @@ cpan: buildspec.yml requires
 dist_noinst_DATA = buildspec.yml
 
 clean-local:
-	rm -f requires
 	rm -f *.tar.gz
 	rm -f provides

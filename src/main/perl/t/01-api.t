@@ -12,6 +12,7 @@ use Digest::MD5::File qw(file_md5_hex);
 use English qw{-no_match_vars};
 use File::Temp qw{ tempfile };
 use Test::More;
+
 our $OWNER_ID;
 our $OWNER_DISPLAYNAME;
 our @REGIONS = (undef);
@@ -20,22 +21,47 @@ if ( $ENV{AMAZON_S3_REGIONS} ) {
   push @REGIONS, split /\s*,\s*/xsm, $ENV{AMAZON_S3_REGIONS};
 } ## end if ( $ENV{AMAZON_S3_REGIONS...})
 
+my $host;
+
+my $skip_owner_id;
+my $skip_permissions;
+my $skip_acls;
+
+if ( exists $ENV{AMAZON_S3_LOCALSTACK} ) {
+  $host = 'localhost:4566';
+
+  $ENV{'AWS_ACCESS_KEY_ID'}     = 'test';
+  $ENV{'AWS_ACCESS_KEY_SECRET'} = 'test';
+
+  $ENV{'AMAZON_S3_EXPENSIVE_TESTS'} = 1;
+
+  $skip_owner_id    = 1;
+  $skip_permissions = 1;
+  $skip_acls        = 1;
+} ## end if ( exists $ENV{AMAZON_S3_LOCALSTACK...})
+else {
+  $host = $ENV{AMAZON_S3_HOST};
+} ## end else [ if ( exists $ENV{AMAZON_S3_LOCALSTACK...})]
+
+my $secure = $host ? 0 : 1;
+
+# do not use DNS bucket names for testing if a mocking service is used
+# override this by setting AMAZON_S3_DNS_BUCKET_NAMES to any value
+# your tests may fail unless you have DNS entry for the bucket name
+# e.g 127.0.0.1 net-amazon-s3-test-test.localhost
+
+my $dns_bucket_names;
+#  = ( $host && !exists $ENV{AMAZON_S3_DNS_BUCKET_NAMES} ) ? 0 : 1;
+
+$skip_acls //= exists $ENV{AMAZON_S3_MINIO}
+  || exists $ENV{AMAZON_S3_SKIP_ACL_TESTS};
+
+my $no_region_constraint //= exists $ENV{AMAZON_S3_MINIO}
+  || exists $ENV{AMAZON_S3_SKIP_REGION_CONSTRAINT_TEST};
+
 my $aws_access_key_id     = $ENV{'AWS_ACCESS_KEY_ID'};
 my $aws_secret_access_key = $ENV{'AWS_ACCESS_KEY_SECRET'};
 my $token                 = $ENV{'AWS_SESSION_TOKEN'};
-
-my $host = $ENV{S3_HOST};
-
-my $skip_acls
-  = exists $ENV{AMAZON_S3_MINIO}
-  || exists $ENV{AMAZON_S3_LOCALSTACK}
-  || exists $ENV{AMAZON_S3_SKIP_ACL_TESTS};
-
-my $skip_owner_id    = exists $ENV{AMAZON_S3_LOCALSTACK};
-my $skip_permissions = exists $ENV{AMAZON_S3_LOCALSTACK};
-
-my $no_region_constraint = exists $ENV{AMAZON_S3_MINIO}
-  || exists $ENV{AMAZON_S3_SKIP_REGION_CONSTRAINT_TEST};
 
 if ( !$ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
   plan skip_all => 'Testing this module for real costs money.';
@@ -57,8 +83,11 @@ if ( $ENV{AMAZON_S3_CREDENTIALS} ) {
   require Amazon::Credentials;
 
   $s3 = Amazon::S3->new(
-    { credentials => Amazon::Credentials->new,
-      host        => $host
+    { credentials      => Amazon::Credentials->new,
+      host             => $host,
+      secure           => $secure,
+      dns_bucket_names => $dns_bucket_names,
+      level            => $ENV{DEBUG} ? 'trace' : 'error',
     }
   );
   ( $aws_access_key_id, $aws_secret_access_key, $token )
@@ -69,7 +98,10 @@ else {
     { aws_access_key_id     => $aws_access_key_id,
       aws_secret_access_key => $aws_secret_access_key,
       token                 => $token,
-      host                  => $host
+      host                  => $host,
+      secure                => $secure,
+      dns_bucket_names      => $dns_bucket_names,
+      level                 => $ENV{DEBUG} ? 'trace' : 'error',
     }
   );
 } ## end else [ if ( $ENV{AMAZON_S3_CREDENTIALS...})]
@@ -207,13 +239,18 @@ for my $location (@REGIONS) {
       }
     );
 
+    my $url
+      = $s3->dns_bucket_names
+      ? "http://$bucketname_raw.$host/$keyname"
+      : "http://$host/$bucketname/$keyname";
+
     SKIP: {
       if ($skip_acls) {
         skip "ACLs only for Amazon S3", 3;
       } ## end if ($skip_acls)
 
-      is_request_response_code( "http://$bucketname_raw.$host/$keyname",
-        200, "can access the publicly readable key" );
+      is_request_response_code( $url, 200,
+        "can access the publicly readable key" );
 
       like_acl_allusers_read( $bucket_obj, $keyname );
 
@@ -222,12 +259,11 @@ for my $location (@REGIONS) {
     } ## end SKIP:
 
     SKIP: {
-      if ( $ENV{LOCALSTACK} ) {
-        skip 'LocalStack does not enforce ACSs', 1;
-      } ## end if ( $ENV{LOCALSTACK} )
+      if ($skip_acls) {
+        skip 'ACLs only for Amazon S3', 1;
+      } ## end if ($skip_acls)
 
-      is_request_response_code( "http://$bucketname_raw.$host/$keyname",
-        403, "cannot access the private key" );
+      is_request_response_code( $url, 403, "cannot access the private key" );
     } ## end SKIP:
 
     SKIP: {
@@ -245,7 +281,7 @@ for my $location (@REGIONS) {
         )
       );
 
-      is_request_response_code( "http://$bucketname_raw.$host/$keyname",
+      is_request_response_code( $url,
         200, "can access the publicly readable key after acl_xml set" );
 
       like_acl_allusers_read( $bucket_obj, $keyname );
@@ -264,7 +300,7 @@ for my $location (@REGIONS) {
         skip 'LocalStack does not enforce ACLs', 2;
       } ## end if ( $skip_acls || $ENV...)
 
-      is_request_response_code( "http://$bucketname_raw.$host/$keyname",
+      is_request_response_code( $url,
         403, 'cannot access the private key after acl_xml set' );
 
       unlike_acl_allusers_read( $bucket_obj, $keyname );
@@ -288,12 +324,16 @@ for my $location (@REGIONS) {
       }
     );
 
+    my $url
+      = $s3->dns_bucket_names
+      ? "http://$bucketname_raw.$host/$keyname2"
+      : "http://$host/$bucketname/$keyname2";
+
     SKIP: {
       skip 'LocalStack does not enforce ACLs', 1
         if $skip_permissions || $skip_acls;
 
-      is_request_response_code( "http://$bucketname_raw.$host/$keyname2",
-        403, "cannot access the private key" );
+      is_request_response_code( $url, 403, "cannot access the private key" );
     } ## end SKIP:
 
     SKIP: {
@@ -309,7 +349,7 @@ for my $location (@REGIONS) {
         )
       );
 
-      is_request_response_code( "http://$bucketname_raw.$host/$keyname2",
+      is_request_response_code( $url,
         200, "can access the publicly readable key" );
 
       like_acl_allusers_read( $bucket_obj, $keyname2 );

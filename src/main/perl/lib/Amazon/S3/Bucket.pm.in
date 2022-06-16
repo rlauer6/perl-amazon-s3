@@ -46,9 +46,16 @@ sub _uri {
 ########################################################################
   my ( $self, $key ) = @_;
 
-  return ($key)
+  my $uri
+    = ($key)
     ? $self->bucket . $SLASH . $self->account->_urlencode($key)
     : $self->bucket . $SLASH;
+
+  if ( $self->account->dns_bucket_names ) {
+    $uri =~ s/^\///xsm;
+  } ## end if ( $self->account->dns_bucket_names)
+
+  return $uri;
 } ## end sub _uri
 
 ########################################################################
@@ -346,8 +353,17 @@ sub get_key {
 
   my $acct = $self->account;
 
-  my $request  = $acct->_make_request( $method, $self->_uri($key), {} );
+  my $uri = $self->_uri($key);
+
+  my $request = $acct->_make_request( $method, $uri, {} );
+
   my $response = $acct->_do_http( $request, $filename );
+
+  $acct->get_logger->debug(
+    sub {
+      return Dumper( [ $request, $response ] );
+    }
+  );
 
   return if $response->code == 404;
 
