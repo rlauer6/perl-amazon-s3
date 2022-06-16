@@ -990,6 +990,7 @@ refactoring and testing in order to support the new sigining method.
 
 =item Signature Version 2
 
+
 L<https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html>
 
 =item Signature Version 4
@@ -1397,8 +1398,8 @@ only test creating a bucket in the local region.
 
 =back
 
-Consider using an S3 mocking service like C<minio> or <LocalStack>
-if you want to create real tests for your applications or this module.
+I<Consider using an S3 mocking service like C<minio> or <LocalStack>
+if you want to create real tests for your applications or this module.>
 
 =head1 ADDITIONAL INFORMATION
 
