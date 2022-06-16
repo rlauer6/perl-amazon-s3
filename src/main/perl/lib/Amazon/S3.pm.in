@@ -1398,7 +1398,7 @@ only test creating a bucket in the local region.
 
 =back
 
-I<Consider using an S3 mocking service like C<minio> or <LocalStack>
+I<Consider using an S3 mocking service like C<minio> or C<LocalStack>
 if you want to create real tests for your applications or this module.>
 
 =head1 ADDITIONAL INFORMATION

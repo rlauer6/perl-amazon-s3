@@ -497,8 +497,13 @@ a real test unless you set these environment variables:
     A comma delimited list of regions to use for testing. The default will
     only test creating a bucket in the local region.
 
+<<<<<<< HEAD
+_Consider using an S3 mocking service like `minio` or <LocalStack_
+if you want to create real tests for your applications or this module.>
+=======
 Consider using an S3 mocking service like `minio` or <LocalStack>
 if you want to create real tests for your applications or this module.
+>>>>>>> 2dea8d14565a2383e3e8737c33db97f07b7db708
 
 # ADDITIONAL INFORMATION
 
