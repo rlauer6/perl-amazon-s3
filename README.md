@@ -569,17 +569,17 @@ This module was initially based on [Net::Amazon::S3](https://metacpan.org/pod/Ne
 Leon Brocard. Net::Amazon::S3 was based on example code from
 Amazon with this notice:
 
-\#  This software code is made available "AS IS" without warranties of any
-\#  kind.  You may copy, display, modify and redistribute the software
-\#  code either by itself or as incorporated into your code; provided that
-\#  you do not remove any proprietary notices.  Your use of this software
-\#  code is at your own risk and you waive any claim against Amazon
-\#  Digital Services, Inc. or its affiliates with respect to your use of
-\#  this software code. (c) 2006 Amazon Digital Services, Inc. or its
-\#  affiliates.
+_This software code is made available "AS IS" without warranties of any
+kind.  You may copy, display, modify and redistribute the software
+code either by itself or as incorporated into your code; provided that
+you do not remove any proprietary notices.  Your use of this software
+code is at your own risk and you waive any claim against Amazon
+Digital Services, Inc. or its affiliates with respect to your use of
+this software code. (c) 2006 Amazon Digital Services, Inc. or its
+affiliates._
 
 The software is released under the Artistic License. The
 terms of the Artistic License are described at
 http://www.perl.com/language/misc/Artistic.html. Except
-where otherwise noted, Amazon::S3 is Copyright 2008, Timothy
+where otherwise noted, `Amazon::S3` is Copyright 2008, Timothy
 Appnel, tima@cpan.org. All rights reserved.
