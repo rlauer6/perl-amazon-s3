@@ -1,4 +1,4 @@
-Thu Jun 16 11:05:26 2022  Rob Lauer  <rlauer6@comcast.net>
+Fri Jun 17 07:21:22 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.49]:
 	* Makefile.am
@@ -46,7 +46,7 @@ Thu Jun 16 11:05:26 2022  Rob Lauer  <rlauer6@comcast.net>
 	* cpan/requires: new
 	* cpan/test-requires: new
 	* src/main/perl/t/01-api.t
-	- env vars for controlling tests
+	- env vars for controlling tests1
 	- mv'd from dist/t/01api.t
 	- refactored test
 	- support AWS mocking services

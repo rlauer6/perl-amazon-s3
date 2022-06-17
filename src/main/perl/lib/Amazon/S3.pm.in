@@ -14,7 +14,7 @@ use English qw{-no_match_vars};
 use HTTP::Date;
 use LWP::UserAgent::Determined;
 use MIME::Base64 qw(encode_base64 decode_base64);
-use Scalar::Util qw{ reftype };
+use Scalar::Util qw{ reftype blessed };
 use List::Util qw{ any };
 use URI::Escape qw(uri_escape_utf8);
 use XML::Simple;
@@ -57,17 +57,30 @@ sub new {
   $options{timeout}          //= $DEFAULT_TIMEOUT;
   $options{secure}           //= $TRUE;
   $options{host}             //= $DEFAULT_HOST;
-  $options{level}            //= $DEFAULT_LOG_LEVEL;
   $options{dns_bucket_names} //= $TRUE;
+  $options{_region} = delete $options{region};
 
+  # save this for later
+  my $level = $options{level};
   $options{log_level} = delete $options{level};
-  $options{_region}   = delete $options{region};
 
   my $self = $class->SUPER::new( \%options );
 
   # setup logger
-  $self->logger( $self->logger || bless { log_level => $self->log_level },
-    'Amazon::S3::Logger' );
+  if ( blessed( $self->logger ) ) {
+
+    # get level from your logger, if you didn't pass one
+    if ( $self->get_logger->can('level') ) {
+      if ( !$level ) {
+        $level = $self->get_logger->level();
+      } ## end if ( !$level )
+    } ## end if ( $self->get_logger...)
+  } ## end if ( blessed( $self->logger...))
+  else {
+
+    $self->logger( bless { log_level => $level // $DEFAULT_LOG_LEVEL },
+      'Amazon::S3::Logger' );
+  } ## end else [ if ( blessed( $self->logger...))]
 
   $self->get_logger->debug(
     sub {
@@ -245,6 +258,16 @@ sub delete_bucket {
   return $self->_send_request_expect_nothing( 'DELETE', $bucket . $SLASH,
     {} );
 } ## end sub delete_bucket
+
+########################################################################
+sub list_bucket_v2 {
+########################################################################
+  my ( $self, $conf ) = @_;
+
+  $conf->{'list-type'} = '2';
+
+  goto &list_bucket;
+} ## end sub list_bucket_v2
 
 ########################################################################
 sub list_bucket {
