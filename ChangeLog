@@ -1,3 +1,11 @@
+Fri Jun 17 09:48:16 2022  Rob Lauer  <rlauer6@comcast.net>
+
+	[0.50 - version requirements]:
+	* cpan/Makefile.am: --no-core
+	* configure.ac: remove version requirements
+	* cpan/test-requires: add without core modules
+	* cpan/requires: remove core modules
+
 Fri Jun 17 07:21:22 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.49]:

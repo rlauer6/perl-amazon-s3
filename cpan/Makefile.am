@@ -9,7 +9,7 @@ requires:
 	set -e; dependencies=$$(mktemp); \
 	test -x "$(scandeps)" || false; \
 	for a in $$(find  $(top_srcdir) -type f \( -name '*.pm' -o -name '*.t' \) ); \
-	  do $(scandeps) -r $$a >>$$dependencies; \
+	  do $(scandeps) --no-core -r $$a >>$$dependencies; \
 	done; \
 	cat $$dependencies | grep -v 'Amazon::' | awk '{ print $$1 " " $$2}' |sort -u >$@
 

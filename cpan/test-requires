@@ -1,6 +1,2 @@
 Digest::MD5::File 0.08
 Test::More 1.302190
-lib 0.64
-strict 1.11
-vars 1.04
-warnings 1.42
