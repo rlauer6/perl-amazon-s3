@@ -1,3 +1,9 @@
+Sun Jun 19 08:19:19 2022  Rob Lauer  <rlauer@usgn.net>
+
+	[0.52 - specify version of List::Util required]
+	* cpan/requires: List::Util
+	* cpan/Makefile.am: option of --no-core
+
 Sat Jun 18 07:05:14 2022  Rob Lauer  <rlauer@usgn.net>
 
 	[0.51 - unit tests]:
