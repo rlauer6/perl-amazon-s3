@@ -12,7 +12,7 @@ use English qw{-no_match_vars};
 use Test::More;
 use Test::Output;
 
-plan tests => 23;
+plan tests => 12;
 
 use_ok('Amazon::S3');
 
@@ -69,16 +69,4 @@ my $s3 = Amazon::S3->new(
 );
 
 test_all_levels($s3);
-
-{
-  eval "use Log::Log4perl";
-
-  Log::Log4perl->import('easy');
-
-  Log::Log4perl->easy_init;
-
-  $s3->logger( Log::Log4perl->get_logger );
-
-  test_all_levels($s3);
-}
 

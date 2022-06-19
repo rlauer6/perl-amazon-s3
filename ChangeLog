@@ -1,3 +1,8 @@
+Sat Jun 18 07:05:14 2022  Rob Lauer  <rlauer@usgn.net>
+
+	[0.51 - unit tests]:
+	* src/main/perl/t/02-logger.t: remove Log::Log4perl from test
+
 Fri Jun 17 09:48:16 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.50 - version requirements]:
