@@ -2,10 +2,10 @@ Class::Accessor::Fast 0.51
 Digest::HMAC_SHA1 1.04
 Digest::MD5::File 0.08
 HTTP::Date 6.02
++List::Util 1.5
 LWP::UserAgent::Determined 1.07
 Readonly 2.05
 Test::Output 1.033
 URI 5.10
 URI::Escape 5.10
 XML::Simple 2.25
-+List::Util 1.5
