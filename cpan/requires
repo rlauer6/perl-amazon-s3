@@ -4,8 +4,9 @@ Digest::MD5::File 0.08
 HTTP::Date 6.02
 +List::Util 1.5
 LWP::UserAgent::Determined 1.07
+Net::Amazon::Signature::V4 0
 Readonly 2.05
 Test::Output 1.033
 URI 5.10
 URI::Escape 5.10
-XML::Simple 2.25
+XML::LibXML 0
