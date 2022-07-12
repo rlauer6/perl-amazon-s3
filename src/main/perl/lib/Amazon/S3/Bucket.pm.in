@@ -13,7 +13,7 @@ use English qw{-no_match_vars};
 use File::stat;
 use IO::File;
 use MIME::Base64;
-use XML::Simple;
+use XML::LibXML;
 use URI;
 
 use parent qw{Class::Accessor::Fast};
