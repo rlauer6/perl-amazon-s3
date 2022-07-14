@@ -112,6 +112,8 @@ below may not be complete.
 
 - API Signing
 
+    _Update: versions _= 0.54 now support Signature V4>
+
     Making calls to AWS APIs requires that the calls be signed.  Amazon
     has added a new signing method (Signature Version 4) to increase
     security around their APIs.  This module continues to use the original
@@ -138,11 +140,11 @@ below may not be complete.
 
 - Multipart Upload Support
 
-    While there are undocumented methods for multipart uploads (used for
+    While there are undocumented methods for multi-part uploads (used for
     files >5Gb), those methods have not been tested and may not in fact
     work today.
 
-    For more information regarding multipart uploads visit the link below.
+    For more information regarding multi-part uploads visit the link below.
 
     [https://docs.aws.amazon.com/AmazonS3/latest/API/API\_CreateMultipartUpload.html](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html)
 
@@ -247,9 +249,67 @@ Create a new S3 client object. Takes some arguments:
 
     default: 4096
 
+## signer
+
+Sets or retrieves the signer object. API calls must be signed using
+your AWS credentials. By default, starting with version 0.54 the
+module will use [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4) as the signer and
+instantiate a signer object in the constructor. Note however, that
+signers need your credentials and they _will_ get stored by that
+class, making them susceptible to inadvertant exfiltration. You have a
+few options here:
+
+- 1. Use your own signer.
+
+    You may have noticed that you can also provide your own credentials
+    object forcing this module to use your object for retrieving
+    credentials. Likewise, you can use your own signer so that this
+    module's signer never sees or stores those credentials.
+
+- 2. Pass the credentials object and set `cache_signer` to a
+false value.
+
+    If you pass a credentials object and set `cache_signer` to a false
+    value, the module will use the credentials object to retrieve
+    credentials and create a new signer each time an API call is made that
+    requires signing. This prevents your credentials from being stored
+    inside of the signer class.
+
+    _Note that using your own credentials object that stores your
+    credentials in plaintext is also going to expose your credentials when
+    someone dumps the class._
+
+- 3. Pass credentials, set `cache_signer` to a false value.
+
+    Unfortunately, while this will prevent [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4)
+    from hanging on to your credentials, you credentials will be store in
+    the [Amazon::S3](https://metacpan.org/pod/Amazon%3A%3AS3) object.
+
+    Starting with version 0.55 of this module, if you have installed
+    [Crypt::CBC](https://metacpan.org/pod/Crypt%3A%3ACBC) and [Crypt::Blowfish](https://metacpan.org/pod/Crypt%3A%3ABlowfish), your credentials will be
+    encrypted using a random key created when the class is
+    instantiated. While this is more secure than leaving them in
+    plaintext, if the key is discovered (the key however is not stored in
+    the object's hash) and the object is dumped, your encrypted
+    credentials can be exposed.
+
+- 4. Use very granular credentials for bucket access only.
+
+    Use credentials that only allow access to a bucket or portions of a
+    bucket required for your application. This will at least limit the
+    _blast radius_ of any potential security breach.
+
+- 5. Do nothing...send the credentials, use the default signer.
+
+    In this case, both the [Amazon::S3](https://metacpan.org/pod/Amazon%3A%3AS3) class and the
+    [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4) have your credentials. Caveat Emptor.
+
+    See Also [Amazon::Credentials](https://metacpan.org/pod/Amazon%3A%3ACredentials) for more information about safely
+    storing your credentials and preventing exfiltration.
+
 ## turn\_on\_special\_retry
 
-Called to add extry retry codes if retry has been set
+Called to add extra retry codes if retry has been set
 
 ## turn\_off\_special\_retry
 
@@ -273,7 +333,7 @@ Returns `undef` on error, else HASHREF of results:
 
 - buckets
 
-    Any ARRAYREF of [Amazon::SimpleDB::Bucket](https://metacpan.org/pod/Amazon%3A%3ASimpleDB%3A%3ABucket) objects for the 
+    Any ARRAYREF of [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) objects for the 
     account.
 
 ## add\_bucket 

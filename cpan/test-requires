@@ -1,2 +1,3 @@
 Digest::MD5::File 0.08
 Test::More 1.302190
+Test::Output 1.033

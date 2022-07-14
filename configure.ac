@@ -154,9 +154,11 @@ ads_PERL_MODULE([Readonly], [REQUIRED])
 ads_PERL_MODULE([Scalar::Util], [REQUIRED])
 dnl ads_PERL_MODULE([strict], [REQUIRED])
 ads_PERL_MODULE([Test::More], [REQUIRED])
+ads_PERL_MODULE([Test::Output], [REQUIRED])
 ads_PERL_MODULE([URI::Escape], [REQUIRED])
 ads_PERL_MODULE([warnings], [REQUIRED])
-ads_PERL_MODULE([XML::Simple], [REQUIRED])
+ads_PERL_MODULE([XML::LibXML::Simple], [REQUIRED])
+ads_PERL_MODULE([XML::LibXML], [REQUIRED])
 
 AX_DISTCHECK_HACK
 AX_DEPS_CHECK

@@ -35,6 +35,7 @@ Readonly our $FALSE => 0;
 # chars
 Readonly our $COMMA         => q{,};
 Readonly our $COLON         => q{:};
+Readonly our $DOT           => q{.};
 Readonly our $DOUBLE_COLON  => q{::};
 Readonly our $EMPTY         => q{};
 Readonly our $SLASH         => q{/};
@@ -48,6 +49,7 @@ our %EXPORT_TAGS = (
       $AMPERSAND
       $COLON
       $DOUBLE_COLON
+      $DOT
       $COMMA
       $EMPTY
       $EQUAL_SIGN

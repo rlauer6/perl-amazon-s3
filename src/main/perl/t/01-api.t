@@ -50,8 +50,8 @@ my $secure = $host ? 0 : 1;
 # your tests may fail unless you have DNS entry for the bucket name
 # e.g 127.0.0.1 net-amazon-s3-test-test.localhost
 
-my $dns_bucket_names;
-#  = ( $host && !exists $ENV{AMAZON_S3_DNS_BUCKET_NAMES} ) ? 0 : 1;
+my $dns_bucket_names
+  = ( $host && !exists $ENV{AMAZON_S3_DNS_BUCKET_NAMES} ) ? 0 : 1;
 
 $skip_acls //= exists $ENV{AMAZON_S3_MINIO}
   || exists $ENV{AMAZON_S3_SKIP_ACL_TESTS};

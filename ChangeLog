@@ -1,3 +1,33 @@
+Thu Jul 14 06:34:56 2022  Rob Lauer  <rlauer6@comcast.net>>
+
+	[0.55 - use XML::LibXML]:
+	* VERSION: bump
+	* src/main/perl/lib/Amazon/S3.pm.in: use XML::LibXML, not XML::Simple
+	- perlcritic cleanups
+	- pod cleanup
+	(new)
+	- cache_signer
+	- encrypt credentials
+	(get_default_region): new
+	(get_aws_access_key_id): new
+	(get_aws_secret_access_key): new
+	(get_token): new
+	(_decrypt): new
+	(_encrypt): new
+	(signer)
+	- accesses _signer now
+	- set default region to caller's value or default
+	(buckets): set region to us-east-1 temporarily
+	(debug): new convenience method for level => 'debug'
+	(_make_request): allow disabling of domain buckets 
+	* src/main/perl/lib/Amazon/S3/Bucket.pm.in: comment tweak
+	* src/main/perl/lib/Amazon/S3/Constant.pm.in: $DOT
+	* src/main/perl/t/01-api.t: set $dns_bucket_names to true?
+	* cpan/test-requires: +Test::Output
+	* cpan/requires: -Test::Output
+	* configure.ac
+	- ads_PERL_MODULE XML::LibXML::Simple, XML::LibXML, Test::Output
+
 Wed Jul 13 13:09:04 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.54 - merge timmullin changes]:
