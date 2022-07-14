@@ -9,4 +9,5 @@ Readonly 2.05
 Test::Output 1.033
 URI 5.10
 URI::Escape 5.10
+XML::Simple 2.25
 XML::LibXML 0
