@@ -12,7 +12,9 @@ use Digest::MD5::File qw(file_md5 file_md5_hex);
 use English qw{-no_match_vars};
 use File::stat;
 use IO::File;
+use IO::Scalar;
 use MIME::Base64;
+use Scalar::Util qw{reftype};
 use XML::LibXML;
 use URI;
 
@@ -20,7 +22,8 @@ use parent qw{Class::Accessor::Fast};
 
 our $VERSION = '@PACKAGE_VERSION@'; ## no critic
 
-__PACKAGE__->mk_accessors(qw{bucket creation_date account buffer_size});
+__PACKAGE__->mk_accessors(
+  qw{bucket creation_date account buffer_size region});
 
 ########################################################################
 sub new {
@@ -37,6 +40,16 @@ sub new {
 
   croak 'no account'
     if !$self->account;
+
+  # now each bucket maintains its own region
+  if ( !$self->region ) {
+    my $region = $self->get_location_constraint() // 'us-east-1';
+
+    $self->account->get_logger->debug( sprintf "bucket: %s region: %s\n",
+      $self->bucket, ( $region // $EMPTY ) );
+
+    $self->region($region);
+  }
 
   return $self;
 } ## end sub new
@@ -120,12 +133,125 @@ sub add_key_filename {
   return $self->add_key( $key, \$value, $conf );
 } ## end sub add_key_filename
 
+########################################################################
+sub upload_multipart_object {
+########################################################################
+  my ( $self, @args ) = @_;
+
+  my $logger = $self->account->get_logger;
+
+  my %parameters;
+
+  if ( @args == 1 && reftype( $args[0] ) eq 'HASH' ) {
+    %parameters = %{ $args[0] };
+  }
+  else {
+    %parameters = @args;
+  }
+
+  croak 'no key!'
+    if !$parameters{key};
+
+  croak 'either data, callback or fh must be set!'
+    if !$parameters{data} && !$parameters{callback} && !$parameters{fh};
+
+  croak 'callback must be a reference to a subroutine!'
+    if $parameters{callback} && reftype( $parameters{callback} ) ne 'CODE';
+
+  $parameters{abort_on_error} //= $TRUE;
+  $parameters{chunk_size}     //= $MIN_MULTIPART_UPLOAD_CHUNK_SIZE;
+
+  if ( !$parameters{callback} && !$parameters{fh} ) {
+    #...but really nobody should be passing a >5MB scalar
+    my $data = ref $parameters{data} ? $parameters{data} : \$parameters{data};
+
+    $parameters{fh} = IO::Scalar->new($data);
+  }
+
+  # ...having a file handle implies, we use this callback
+  if ( $parameters{fh} ) {
+    my $fh = $parameters{fh};
+
+    $fh->seek( 0, 2 );
+
+    my $length = $fh->tell;
+    $fh->seek( 0, 0 );
+
+    $logger->debug( sub { return sprintf 'length of object: %s', $length; } );
+
+    croak 'length of the object must be >= '
+      . $MIN_MULTIPART_UPLOAD_CHUNK_SIZE
+      if $length < $MIN_MULTIPART_UPLOAD_CHUNK_SIZE;
+
+    my $chunk_size
+      = ( $parameters{chunk_size} && $parameters{chunk_size} )
+      > $MIN_MULTIPART_UPLOAD_CHUNK_SIZE
+      ? $parameters{chunk_size}
+      : $MIN_MULTIPART_UPLOAD_CHUNK_SIZE;
+
+    $parameters{callback} = sub {
+      return
+        if !$length;
+
+      my $bytes_read = 0;
+
+      my $n = $length >= $chunk_size ? $chunk_size : $length;
+
+      $logger->debug( sprintf 'reading %d bytes', $n );
+
+      my $buffer;
+
+      my $bytes = $fh->read( $buffer, $n, $bytes_read );
+      $logger->debug( sprintf 'read %d bytes', $bytes );
+
+      $bytes_read += $bytes;
+
+      $length -= $bytes;
+
+      $logger->debug( sprintf '%s bytes left to read', $length );
+
+      return ( \$buffer, $bytes );
+    };
+
+  }
+
+  my $headers = $parameters{headers} || {};
+
+  my $id = $self->initiate_multipart_upload( $parameters{key}, $headers );
+
+  $logger->debug( sprintf 'multipart id: %s', $id );
+
+  my $part = 1;
+  my %parts;
+  my $key = $parameters{key};
+
+  eval {
+    while (1) {
+      my ( $buffer, $length ) = $parameters{callback}->();
+      last if !$buffer;
+
+      my $etag = $self->upload_part_of_multipart_upload(
+        { id => $id, key => $key, data => $buffer, part => $part } );
+
+      $parts{ $part++ } = $etag;
+    }
+
+    $self->complete_multipart_upload( $parameters{key}, $id, \%parts );
+  };
+
+  if ( $EVAL_ERROR && $parameters{abort_on_error} ) {
+    $self->abort_multipart_upload( $key, $id );
+    %parts = ();
+  }
+
+  return \%parts;
+}
+
 # Initiates a multipart upload operation. This is necessary for uploading
 # files > 5Gb to Amazon S3
 #
 # returns: upload ID assigned by Amazon (used to identify this
 # particular upload in other operations)
-
 ########################################################################
 sub initiate_multipart_upload {
 ########################################################################
@@ -136,8 +262,14 @@ sub initiate_multipart_upload {
 
   my $acct = $self->account;
 
-  my $request
-    = $acct->_make_request( 'POST', $self->_uri($key) . '?uploads=', $conf );
+  my $request = $acct->_make_request(
+    { region  => $self->region,
+      method  => 'POST',
+      path    => $self->_uri($key) . '?uploads=',
+      headers => $conf
+    }
+  );
+
   my $response = $acct->_do_http($request);
 
   $acct->_croak_if_response_error($response);
@@ -160,7 +292,27 @@ sub upload_part_of_multipart_upload {
 ########################################################################
   my ( $self, @args ) = @_;
 
-  my ( $key, $upload_id, $part_number, $data, $length ) = @args;
+  my ( $key, $upload_id, $part_number, $data, $length );
+
+  if ( @args == 1 ) {
+    if ( reftype( $args[0] ) eq 'HASH' ) {
+      ( $key, $upload_id, $part_number, $data, $length )
+        = @{ $args[0] }{qw{ key id part data length}};
+    }
+    elsif ( reftype( $args[0] ) eq 'ARRAY' ) {
+      ( $key, $upload_id, $part_number, $data, $length ) = @{ $args[0] };
+    }
+  }
+  else {
+    ( $key, $upload_id, $part_number, $data, $length ) = @args;
+  }
+
+  # argh...wish we didn't have to do this!
+  if ( ref $data ) {
+    $data = ${$data};
+  }
+
+  $length = $length || length $data;
 
   croak 'Object key is required'
     if !$key;
@@ -183,9 +335,19 @@ sub upload_part_of_multipart_upload {
   $conf->{'Content-Length'} = $length;
 
   my $params = "?partNumber=${part_number}&uploadId=${upload_id}";
-  my $request
-    = $acct->_make_request( 'PUT', $self->_uri($key) . $params, $conf,
-    $data );
+
+  $self->account->get_logger->debug(
+    'uploading ' . sprintf 'part: %s length: %s',
+    $part_number, length $data );
+
+  my $request = $acct->_make_request(
+    { region  => $self->region,
+      method  => 'PUT',
+      path    => $self->_uri($key) . $params,
+      headers => $conf,
+      data    => $data
+    }
+  );
 
   my $response = $acct->_do_http($request);
 
@@ -211,6 +373,9 @@ sub upload_part_of_multipart_upload {
 sub complete_multipart_upload {
 ########################################################################
   my ( $self, $key, $upload_id, $parts_hr ) = @_;
+
+  $self->account->get_logger->debug(
+    Dumper( [ $key, $upload_id, $parts_hr ] ) );
 
   croak 'Object key is required'
     if !$key;
@@ -239,7 +404,10 @@ sub complete_multipart_upload {
     $root_element->addChild($part);
   } ## end foreach my $part_num ( sort...)
 
-  my $content    = $xml_doc->toString;
+  my $content = $xml_doc->toString;
+
+  $self->account->get_logger->debug("content: \n$content");
+
   my $md5        = md5($content);
   my $md5_base64 = encode_base64($md5);
   chomp $md5_base64;
@@ -250,13 +418,26 @@ sub complete_multipart_upload {
     'Content-Type'   => 'application/xml'
   };
 
-  my $acct    = $self->account;
-  my $params  = "?uploadId=${upload_id}";
-  my $request = $acct->_make_request( 'POST', $self->_uri($key) . $params,
-    $conf, $content );
+  my $acct   = $self->account;
+  my $params = "?uploadId=${upload_id}";
+
+  my $request = $acct->_make_request(
+    { region  => $self->region,
+      method  => 'POST',
+      path    => $self->_uri($key) . $params,
+      headers => $conf,
+      data    => $content
+    }
+  );
+
   my $response = $acct->_do_http($request);
 
-  $acct->_croak_if_response_error($response);
+  $acct->get_logger->debug( Dumper($response) );
+
+  if ( $response->code !~ /\A2\d\d\z/xsm ) {
+    $acct->_remember_errors( $response->content, 1 );
+    croak $response->status_line;
+  }
 
   return $TRUE;
 } ## end sub complete_multipart_upload
@@ -275,9 +456,16 @@ sub abort_multipart_upload {
   croak 'Upload id is required'
     if !$upload_id;
 
-  my $acct    = $self->account;
-  my $params  = "?uploadId=${upload_id}";
-  my $request = $acct->_make_request( 'DELETE', $self->_uri($key) . $params );
+  my $acct   = $self->account;
+  my $params = "?uploadId=${upload_id}";
+
+  my $request = $acct->_make_request(
+    { region => $self->region,
+      method => 'DELETE',
+      path   => $self->_uri($key) . $params
+    }
+  );
+
   my $response = $acct->_do_http($request);
 
   $acct->_croak_if_response_error($response);
@@ -302,8 +490,14 @@ sub list_multipart_upload_parts {
 
   my $acct   = $self->account;
   my $params = "?uploadId=${upload_id}";
-  my $request
-    = $acct->_make_request( 'GET', $self->_uri($key) . $params, $conf );
+
+  my $request = $acct->_make_request(
+    { region  => $self->region,
+      method  => 'GET',
+      path    => $self->_uri($key) . $params,
+      headers => $conf
+    }
+  );
 
   my $response = $acct->_do_http($request);
 
@@ -323,8 +517,14 @@ sub list_multipart_uploads {
   my ( $self, $conf ) = @_;
 
   my $acct = $self->account;
-  my $request
-    = $acct->_make_request( 'GET', $self->_uri() . '?uploads', $conf );
+
+  my $request = $acct->_make_request(
+    { region  => $self->region,
+      method  => 'GET',
+      path    => $self->_uri() . '?uploads',
+      headers => $conf
+    }
+  );
 
   my $response = $acct->_do_http($request);
 
@@ -357,7 +557,13 @@ sub get_key {
 
   my $uri = $self->_uri($key);
 
-  my $request = $acct->_make_request( $method, $uri, {} );
+  my $request = $acct->_make_request(
+    { region  => $self->region,
+      method  => $method,
+      path    => $uri,
+      headers => {}
+    }
+  );
 
   my $response = $acct->_do_http( $request, $filename );
 
@@ -502,8 +708,13 @@ sub get_acl {
 
   my $acct = $self->account;
 
-  my $request
-    = $acct->_make_request( 'GET', $self->_uri($key) . '?acl=', {} );
+  my $request = $acct->_make_request(
+    { region  => $self->region,
+      method  => 'GET',
+      path    => $self->_uri($key) . '?acl=',
+      headers => {}
+    }
+  );
 
   my $old_redirectable = $acct->ua->requests_redirectable;
   $acct->ua->requests_redirectable( [] );
@@ -517,7 +728,13 @@ sub get_acl {
     my $old_host = $acct->host;
     $acct->host( $uri->host );
 
-    my $request = $acct->_make_request( 'GET', $uri->path, {} );
+    my $request = $acct->_make_request(
+      { region  => $self->region,
+        method  => 'GET',
+        path    => $uri->path,
+        headers => {}
+      }
+    );
 
     $response = $acct->_do_http($request);
 
@@ -563,8 +780,12 @@ sub get_location_constraint {
 ########################################################################
   my ($self) = @_;
 
-  my $xpc
-    = $self->account->_send_request( 'GET', $self->bucket . '/?location=' );
+  my $xpc = $self->account->_send_request(
+    { region => $self->region,
+      method => 'GET',
+      path   => $self->bucket . '/?location='
+    }
+  );
 
   if ( !$xpc ) {
     $self->account->_remember_errors($xpc);
@@ -652,6 +873,8 @@ sub _content_sub {
 1;
 
 __END__
+
+=pod
 
 =head1 NAME
 
@@ -832,30 +1055,6 @@ hood.
 See L<Amazon::S3/list_bucket_all_v2> for documentation of this
 method.
 
-=head2 abort_multipart_upload
-
-Abort a multipart upload
-
-=head2 complete_multipart_upload
-
-Signal completion of a multipart upload
-
-=head2 initiate_multipart_upload
-
-Initiate a multipart upload
-
-=head2 list_multipart_upload_parts
-
-List all the uploaded parts of a multipart upload
-
-=head2 list_multipart_uploads
-
-List multipart uploads in progress
-
-=head2 upload_part_of_multipart_upload
-
-Upload a portion of a multipart upload
-
 =head2 get_acl
 
 Retrieves the Access Control List (ACL) for the bucket or
@@ -941,6 +1140,157 @@ The S3 error code for the last error the account encountered.
 =head2 errstr
 
 A human readable error string for the last error the account encountered.
+
+=head1 MULTIPART UPLOAD SUPPORT
+
+From Amazon's website:
+
+I<Multipart upload allows you to upload a single object as a set of
+parts. Each part is a contiguous portion of the object's data. You can
+upload these object parts independently and in any order. If
+transmission of any part fails, you can retransmit that part without
+affecting other parts. After all parts of your object are uploaded,
+Amazon S3 assembles these parts and creates the object. In general,
+when your object size reaches 100 MB, you should consider using
+multipart uploads instead of uploading the object in a single
+operation.>
+
+See L<https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html> for more information about multipart uploads.
+
+=over 5
+
+=item * Maximum object size 5TB
+
+=item * Maximum number of parts 10,000
+
+=item * Part numbers 1 to 10,000 (inclusive)
+
+=item * Part size 5MB to 5GB. There is no limit on the last part of your multipart upload.
+
+=item * Maximum nubmer of parts returned for a list parts request - 1000
+
+=item * Maximum number of multipart uploads returned in a list multipart uploads request - 1000
+
+=back
+
+A multipart upload begins by calling
+C<initiate_multipart_upload()>. This will return an identifier that is
+used in subsequent calls.
+
+ my $bucket = $s3->bucket('my-bucket');
+ my $id = $bucket->initiate_multipart_upload('some-big-object');
+
+ my $part_list = {};
+
+ my $part = 1;
+ my $etag = $bucket->upload_part_of_multipart_upload('my-bucket', $id, $part, $data, length $data);
+ $part_list{$part++} = $etag;
+
+ $bucket->complete_multipart_upload('my-bucket', $id, $part_list);
+
+=heads upload_multipart_object
+
+ upload_multipart_object( ... )
+
+Convenience routine C<upload_multipart_object> that encapsulates the
+multipart upload process. Accepts a hash or hash reference of
+arguments. If successful, a reference to a hash that contains the part
+numbers and etags of the uploaded parts.
+
+You can pass a data object, callback routine or a file handle.
+
+=over 5
+
+=item key
+
+Name of the key to create.
+
+=item data
+
+Scalar object that contains the data to write to S3.
+
+=item callback
+
+Optionally provided a callback routine that will be called until you
+pass a buffer with a length of 0. Your callback will receive no
+arguments but should return a tuple consisting of a B<reference> to a
+scalar object that contains the data to write and a scalar that
+represents the length of data. Once you return a zero length buffer
+the multipart process will be completed.
+
+=item fh
+
+File handle of an open file. The file must be greater than the minimum
+chunk size for multipart uploads otherwise the method will throw an
+exception.
+
+=item abort_on_error
+
+Indicates whether the multipart upload should be aborted if an error
+is encountered. Amazon will charge you for the storage of parts that
+have been uploaded unless you abort the upload.
+
+default: true
+
+=back
+
+=head2 abort_multipart_upload
+
+ abort_multipart_upload(key, multpart-upload-id)
+
+Abort a multipart upload
+
+=head2 complete_multipart_upload
+
+ complete_multipart_upload(key, multpart-upload-id, parts)
+
+Signal completion of a multipart upload. C<parts> is a reference to a
+hash of part numbers and etags.
+
+=head2 initiate_multipart_upload
+
+ initiate_multipart_upload(key, headers)
+
+Initiate a multipart upload. Returns an id used in subsequent call to
+C<upload_part_of_multipart_upload()>.
+
+=head2 list_multipart_upload_parts
+
+List all the uploaded parts of a multipart upload
+
+=head2 list_multipart_uploads
+
+List multipart uploads in progress
+
+=head2 upload_part_of_multipart_upload
+
+  upload_part_of_multipart_upload(key, id, part, data, length)
+
+Upload a portion of a multipart upload
+
+=over 5
+
+=item key
+
+Name of the key in the bucket to create.
+
+=item id
+
+The multipart-upload id return in the C<initiate_multipart_upload> call.
+
+=item part
+
+The next part number (part numbers start at 1).
+
+=item data
+
+Scalar or reference to a scalar that contains the data to upload.
+
+=item length (optional)
+
+Length of the data.
+
+=back
 
 =head1 SEE ALSO
 
