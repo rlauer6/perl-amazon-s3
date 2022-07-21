@@ -3,7 +3,7 @@
 Amazon::S3 - A portable client library for working with and
 managing Amazon S3 buckets and keys.
 
-    ![Amazon::S3](https://github.com/rlauer6/perl-amazon-s3/actions/workflows/build.yml/badge.svg?event=push)
+![Amazon::S3](https://github.com/rlauer6/perl-amazon-s3/actions/workflows/build.yml/badge.svg?event=push)
 
 # SYNOPSIS
 
