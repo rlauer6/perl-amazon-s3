@@ -1,0 +1,27 @@
+name: amazon-s3
+on: [push]
+jobs:
+  test-module:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/rlauer6/perl_5.34.0:latest
+      credentials:
+        username: rlauer6
+        password: ${{ secrets.DOCKER_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/rlauer6/perl_5.34.0:latest
+          options: -v ${{github.workspace}}:/codebase
+          run: |
+            set -x
+            export PATH=$PATH:/opt/perl-5.34.0/bin
+            cd /codebase
+            ./bootstrap
+            for a in $(cat cpan/requires cpan/test-requires| perl -ne 'chomp; s/\^+//; my ($m,$v) = split / /; $v = ( $v && $v > 0) ? "\@$v" : "";  printf "%s%s ", $m, $v;'); do \
+            /opt/perl-5.34.0/bin/cpanm -v $a; \
+            done
+            ./configure
+            make dist
+            make cpan

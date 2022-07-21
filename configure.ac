@@ -100,7 +100,7 @@ AC_PATH_PROG([POD2MARKDOWN],
 	[pod2markdown])
 
 if test -z "$POD2MARKDOWN" ; then 
-  AC_MSG_ERROR([pod2markedown found?])
+  AC_MSG_ERROR([pod2markdown found?])
 fi
 
 AC_PATH_PROG([RPMBUILD],
@@ -133,9 +133,6 @@ AC_ARG_WITH(
 
 AC_SUBST([perl5libdir])
 
-dnl something just to make autoconf include the autotools/ads_ stuff in the distribution
-ads_PERL_MODULE([Data::Dumper])
-
 ads_PERL_MODULE([Carp], [REQUIRED])
 ads_PERL_MODULE([Class::Accessor::Fast], [REQUIRED])
 ads_PERL_MODULE([Data::Dumper], [REQUIRED])
@@ -147,12 +144,12 @@ ads_PERL_MODULE([File::stat], [REQUIRED])
 ads_PERL_MODULE([File::Temp], [REQUIRED])
 ads_PERL_MODULE([HTTP::Date], [REQUIRED])
 ads_PERL_MODULE([IO::File], [REQUIRED])
+ads_PERL_MODULE([IO::Scalar], [REQUIRED])
 ads_PERL_MODULE([List::Util], [REQUIRED])
 ads_PERL_MODULE([LWP::UserAgent::Determined], [REQUIRED])
 ads_PERL_MODULE([MIME::Base64], [REQUIRED])
 ads_PERL_MODULE([Readonly], [REQUIRED])
 ads_PERL_MODULE([Scalar::Util], [REQUIRED])
-dnl ads_PERL_MODULE([strict], [REQUIRED])
 ads_PERL_MODULE([Test::More], [REQUIRED])
 ads_PERL_MODULE([Test::Output], [REQUIRED])
 ads_PERL_MODULE([URI::Escape], [REQUIRED])

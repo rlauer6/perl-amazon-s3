@@ -3,6 +3,8 @@
 Amazon::S3 - A portable client library for working with and
 managing Amazon S3 buckets and keys.
 
+!\[Amazon::S3\](https://github.com/rlauer6/perl-amazon-s3/actions/workflows/build.yml/badge.svg?event=push)
+
 # SYNOPSIS
 
     #!/usr/bin/perl
@@ -103,46 +105,54 @@ dependencies. Below is the original description of the module._
 > this module is forked and then modified to use [XML::SAX](https://metacpan.org/pod/XML%3A%3ASAX)
 > via [XML::Simple](https://metacpan.org/pod/XML%3A%3ASimple).
 
-# LIMITATIONS
+# LIMITATIONS AND DIFFERENCES WITH EARLIER VERSIONS
 
 As noted this module is no longer a _drop-in_ replacement for
-`Net::Amazon::S3` and has limitations that may make the use of this
-module in your applications questionable. The list of limitations
-below may not be complete.
+`Net::Amazon::S3` and has limitations and differences that may make the use of this
+module in your applications questionable.
 
 - API Signing
 
-    _Update: versions _= 0.54 now support Signature V4>
-
     Making calls to AWS APIs requires that the calls be signed.  Amazon
     has added a new signing method (Signature Version 4) to increase
-    security around their APIs.  This module continues to use the original
-    signing method (Signature Version 2).
+    security around their APIs. This module no longer utilizes Signature
+    Version V2.
 
     **New regions after January 30, 2014 will only support Signature Version 4.**
 
-    There has been some effort to add support of Signature Version 4
-    however several method in this package may need significant
-    refactoring and testing in order to support the new sigining method.
-
-    - Signature Version 2
-
-        [https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html)
+    See ["Signature Version V4"](#signature-version-v4) below for important details.>
 
     - Signature Version 4
 
         [https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html](https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html)
 
+        _IMPORTANT NOTE:_
+
+        Unlike Signature Version 2, Version 4 requires a regional
+        parameter. This implies that you need to supply the bucket's region
+        when signing requests for any API call that involve a specific
+        bucket. Starting with version 0.55 of this module,
+        `Amazon::S3::Bucket` will have a new method (`region()` and accept
+        in the constructor a `region` parameter.  If one is not supplied, the
+        region for the bucket will be determined for you by calling the
+        `get_location_constraint()` method.
+
+        When signing API calls, the region for the specific bucket will be
+        used. For calls that are not regional (`buckets()`, e.g.) the default
+        region sent in the `Amazon::S3` constructor will be used.
+
+    - Signature Version 2
+
+        [https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html)
+
 - New APIs
 
-    This module does not support the myriad of new API method calls
+    This module does not support some of the new API method calls
     available for S3 since its original creation.
 
 - Multipart Upload Support
 
-    While there are undocumented methods for multi-part uploads (used for
-    files >5Gb), those methods have not been tested and may not in fact
-    work today.
+    There are currently no unit tests for multipart uploads.
 
     For more information regarding multi-part uploads visit the link below.
 
@@ -306,14 +316,6 @@ false value.
 
     See Also [Amazon::Credentials](https://metacpan.org/pod/Amazon%3A%3ACredentials) for more information about safely
     storing your credentials and preventing exfiltration.
-
-## turn\_on\_special\_retry
-
-Called to add extra retry codes if retry has been set
-
-## turn\_off\_special\_retry
-
-Called to turn off special retry codes when we are deliberately triggering them
 
 ## adjust\_region
 
@@ -486,6 +488,26 @@ Each key is a HASHREF that looks like this:
         owner_displayname => $owner_name
     }
 
+## get\_bucket\_location
+
+    get_bucket_location(bucket-name)
+    get_bucket_locaiton(bucket-obj)
+
+This is a convenience routines for the `get_location_constraint()` of
+the bucket object.  This method will, however return the default
+region of 'us-east-1' when `get_location_constraint()` returns a null
+value.
+
+    my $region = $s3->get_bucket_location('my-bucket');
+
+Starting with version 0.55, `Amazon::S3::Bucket` will call this
+`get_location_constraint()` to determine the region for the
+bucket. You can get the region for the bucket by using the `region()`
+method of the bucket object.
+
+    my $bucket = $s3->bucket('my-bucket');
+    my $bucket_region = $bucket->region;
+
 ## get\_logger
 
 Returns the logger object. If you did not set a logger when you
@@ -519,6 +541,14 @@ Returns the last [HTTP::Request](https://metacpan.org/pod/HTTP%3A%3ARequest) obj
 Set the logging level.
 
 default: error
+
+## turn\_on\_special\_retry
+
+Called to add extra retry codes if retry has been set
+
+## turn\_off\_special\_retry
+
+Called to turn off special retry codes when we are deliberately triggering them
 
 # ABOUT
 

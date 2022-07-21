@@ -1,3 +1,14 @@
+Thu Jul 21 10:53:03 2022  Rob Lauer  <rlauer6@comcast.net>
+
+	[0.55 - CI/CD]:
+	* .github/workflows/build.yml
+	* README.md: generated
+	* configure.ac: typo, IO::Scalar
+	* cpan/requires
+	- IO::Scalar, JSON:PP, Pod::Markdown
+	* src/main/perl/lib/Amazon/S3.pm.in: add badge
+	* NEWS.md: update
+
 Mon Jul 18 16:27:41 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.55 - regional buckets]:
