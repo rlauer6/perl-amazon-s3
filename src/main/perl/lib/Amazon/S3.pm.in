@@ -8,6 +8,7 @@ use 5.010;
 use Amazon::S3::Bucket;
 use Amazon::S3::Constants qw{:all};
 use Amazon::S3::Logger;
+use Amazon::S3::Signature::V4;
 
 use Carp;
 use Data::Dumper;
@@ -21,8 +22,6 @@ use Scalar::Util qw{ reftype blessed };
 use List::Util qw{ any };
 use URI::Escape qw{uri_escape_utf8};
 use XML::LibXML::Simple qw{XMLin};
-
-use Net::Amazon::Signature::V4;
 
 use parent qw{Class::Accessor::Fast};
 
@@ -215,6 +214,20 @@ sub new {
 }
 
 ########################################################################
+sub get_bucket_location {
+########################################################################
+  my ( $self, $bucket ) = @_;
+
+  my $region;
+
+  if ( !ref $bucket || ref $bucket !~ /Amazon::S3::Bucket/xsm ) {
+    $bucket = Amazon::S3::Bucket->new( bucket => $bucket, account => $self );
+  }
+
+  return $self->get_location_constraint // 'us-east-1';
+}
+
+########################################################################
 sub get_default_region {
 ########################################################################
   my ($self) = @_;
@@ -341,16 +354,7 @@ sub buckets {
   # temporarily cache signer
   my $region = $self->_region;
 
-  if ( $self->cache_signer ) {
-    if ( ref $self->signer =~ /Net::Amazon::Signature::V4/xsm ) {
-      if ( $self->region ne 'us-east-1' ) {
-        $self->signer->{endpoint} = 'us-east-1';
-      }
-    }
-  }
-  else {
-    $self->region('us-east-1');
-  }
+  $self->reset_signer_region('us-east-1'); # default region for buckets op
 
   my $r = $self->_send_request( 'GET', $EMPTY, {} );
 
@@ -381,15 +385,7 @@ sub buckets {
     } ## end foreach my $node ( @{$buckets...})
   } ## end if ( ref $r->{Buckets})
 
-  # reset region
-  if ( $self->cache_signer ) {
-    if ( $self->region && $self->region ne 'us-east-1' ) {
-      $self->signer->{endpoint} = $region;
-    }
-  }
-  else {
-    $self->region($region);
-  }
+  $self->reset_signer_region($region); # restore original region
 
   return {
     owner_id          => $owner_id,
@@ -397,6 +393,28 @@ sub buckets {
     buckets           => \@buckets,
   };
 } ## end sub buckets
+
+########################################################################
+sub reset_signer_region {
+########################################################################
+  my ( $self, $region ) = @_;
+
+  # reset signer's region, if the region wasn't us-east-1...note this
+  # is probably not needed anymore since bucket operations now send
+  # the region of the bucket to the signer
+  if ( $self->cache_signer ) {
+    if ( $self->region && $self->region ne 'us-east-1' ) {
+      if ( $self->signer->can('region') ) {
+        $self->signer->region($region);
+      }
+    }
+  }
+  else {
+    $self->region($region);
+  }
+
+  return $self->region;
+}
 
 ########################################################################
 sub add_bucket {
@@ -673,10 +691,10 @@ sub signer {
 
   my $creds = $self->credentials ? $self->credentials : $self;
 
-  my $signer = Net::Amazon::Signature::V4->new(
+  my $signer = Amazon::S3::Signature::V4->new(
     { access_key_id => $creds->get_aws_access_key_id,
       secret        => $creds->get_aws_secret_access_key,
-      endpoint      => $self->region || $self->get_default_region,
+      region        => $self->region || $self->get_default_region,
       service       => 's3',
       $self->get_token ? ( security_token => $creds->get_token ) : (),
     }
@@ -732,8 +750,18 @@ sub _can_bucket_be_subdomain {
 sub _make_request {
 ########################################################################
   my ( $self, @args ) = @_;
+  my ( $method, $path, $headers, $data, $metadata, $region );
 
-  my ( $method, $path, $headers, $data, $metadata ) = @args;
+  if ( ref $args[0] && reftype( $args[0] ) eq 'HASH' ) {
+    ( $method, $path, $headers, $data, $metadata, $region )
+      = @{ $args[0] }{qw{method path headers data metadata region}};
+  }
+  else {
+    ( $method, $path, $headers, $data, $metadata, $region ) = @args;
+  }
+
+  # reset region on every call...every bucket can have it's own region
+  $self->region( $region // $self->_region );
 
   croak 'must specify method'
     if !$method;
@@ -768,6 +796,7 @@ sub _make_request {
 
   $request->content($data);
 
+  $self->signer->{endpoint} = $region; # always set regional endpoint for signing
   $self->signer->sign($request);
 
   $self->get_logger->trace( sub { return Dumper( [$request] ); } );
@@ -782,11 +811,18 @@ sub _send_request {
 ########################################################################
   my ( $self, @args ) = @_;
 
-  my $request = @args == 1 ? $args[0] : $self->_make_request(@args);
+  my $request;
+
+  if ( @args == 1 && ref $args[0] =~ /HTTP::Request/xsm ) {
+    $request = $args[0];
+  }
+  else {
+    $request = $self->_make_request(@args);
+  }
 
   my $response = $self->_do_http($request);
 
-  $self->get_logger->trace( Dumper( [$response] ) );
+  $self->get_logger->debug( Dumper( [$response] ) );
 
   $self->last_response($response);
 
@@ -1370,52 +1406,60 @@ via L<XML::Simple>.
 
 =back
 
-=head1 LIMITATIONS
+=head1 LIMITATIONS AND DIFFERENCES WITH EARLIER VERSIONS
 
 As noted this module is no longer a I<drop-in> replacement for
-C<Net::Amazon::S3> and has limitations that may make the use of this
-module in your applications questionable. The list of limitations
-below may not be complete.
+C<Net::Amazon::S3> and has limitations and differences that may make the use of this
+module in your applications questionable.
 
 =over 5
 
 =item * API Signing
 
-I<Update: versions >= 0.54 now support Signature V4>
-
 Making calls to AWS APIs requires that the calls be signed.  Amazon
 has added a new signing method (Signature Version 4) to increase
-security around their APIs.  This module continues to use the original
-signing method (Signature Version 2).
+security around their APIs. This module no longer utilizes Signature
+Version V2.
 
 B<New regions after January 30, 2014 will only support Signature Version 4.>
 
-There has been some effort to add support of Signature Version 4
-however several method in this package may need significant
-refactoring and testing in order to support the new sigining method.
+See L</Signature Version V4> below for important details.>
 
 =over 10
-
-=item Signature Version 2
-
-L<https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html>
 
 =item Signature Version 4
 
 L<https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html>
 
+I<IMPORTANT NOTE:>
+
+Unlike Signature Version 2, Version 4 requires a regional
+parameter. This implies that you need to supply the bucket's region
+when signing requests for any API call that involve a specific
+bucket. Starting with version 0.55 of this module,
+C<Amazon::S3::Bucket> will have a new method (C<region()> and accept
+in the constructor a C<region> parameter.  If one is not supplied, the
+region for the bucket will be determined for you by calling the
+C<get_location_constraint()> method.
+
+When signing API calls, the region for the specific bucket will be
+used. For calls that are not regional (C<buckets()>, e.g.) the default
+region sent in the C<Amazon::S3> constructor will be used.
+
+=item Signature Version 2
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html>
+
 =back
 
 =item * New APIs
 
-This module does not support the myriad of new API method calls
+This module does not support some of the new API method calls
 available for S3 since its original creation.
 
 =item * Multipart Upload Support
 
-While there are undocumented methods for multi-part uploads (used for
-files >5Gb), those methods have not been tested and may not in fact
-work today.
+There are currently no unit tests for multipart uploads.
 
 For more information regarding multi-part uploads visit the link below.
 
@@ -1591,13 +1635,6 @@ storing your credentials and preventing exfiltration.
 =back
 
 
-=head2 turn_on_special_retry
-
-Called to add extra retry codes if retry has been set
-
-=head2 turn_off_special_retry
-
-Called to turn off special retry codes when we are deliberately triggering them
 
 =head2 adjust_region
 
@@ -1790,6 +1827,26 @@ Each key is a HASHREF that looks like this:
         owner_displayname => $owner_name
     }
 
+=head2 get_bucket_location
+
+ get_bucket_location(bucket-name)
+ get_bucket_locaiton(bucket-obj)
+
+This is a convenience routines for the C<get_location_constraint()> of
+the bucket object.  This method will, however return the default
+region of 'us-east-1' when C<get_location_constraint()> returns a null
+value.
+
+ my $region = $s3->get_bucket_location('my-bucket');
+
+Starting with version 0.55, C<Amazon::S3::Bucket> will call this
+C<get_location_constraint()> to determine the region for the
+bucket. You can get the region for the bucket by using the C<region()>
+method of the bucket object.
+
+  my $bucket = $s3->bucket('my-bucket');
+  my $bucket_region = $bucket->region;
+
 =head2 get_logger
 
 Returns the logger object. If you did not set a logger when you
@@ -1823,6 +1880,14 @@ Returns the last L<HTTP::Request> object.
 Set the logging level.
 
 default: error
+
+=head2 turn_on_special_retry
+
+Called to add extra retry codes if retry has been set
+
+=head2 turn_off_special_retry
+
+Called to turn off special retry codes when we are deliberately triggering them
 
 =head1 ABOUT
 
