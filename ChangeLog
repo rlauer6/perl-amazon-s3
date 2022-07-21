@@ -1,3 +1,10 @@
+Thu Jul 21 11:14:16 2022  Rob Lauer  <rlauer@usgn.net>
+
+	[0.55 - CI/CD]:
+	* .github/workflows/build.yml: remove make cpan
+	* README.md: generated
+	* src/main/perl/lib/Amazon/S3.pm.in: update badge
+
 Thu Jul 21 10:53:03 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.55 - CI/CD]:
