@@ -15,7 +15,6 @@ use IO::File;
 use IO::Scalar;
 use MIME::Base64;
 use Scalar::Util qw{reftype};
-use XML::LibXML;
 use URI;
 
 use parent qw{Class::Accessor::Fast};
@@ -364,6 +363,26 @@ sub upload_part_of_multipart_upload {
   return $etag;
 } ## end sub upload_part_of_multipart_upload
 
+########################################################################
+sub make_xml_document_simple {
+########################################################################
+  my ($parts_hr) = @_;
+
+  my $xml = q{<?xml version="1.0" encoding="UTF-8"?>};
+  my $xml_template
+    = '<Part><PartNumber>%s</PartNumber><ETag>%s</ETag></Part>';
+  my @parts;
+
+  foreach my $part_num ( sort { $a <=> $b } keys %{$parts_hr} ) {
+    push @parts, sprintf $xml_template, $part_num, $parts_hr->{$part_num};
+  }
+
+  $xml .= sprintf "\n<CompleteMultipartUpload>%s</CompleteMultipartUpload>\n",
+    join q{}, @parts;
+
+  return $xml;
+}
+
 #
 # Inform Amazon that the multipart upload has been completed
 # You must supply a hash of part Numbers => eTags
@@ -389,22 +408,9 @@ sub complete_multipart_upload {
   # The complete command requires sending a block of xml containing all
   # the part numbers and their associated etags (returned from the upload)
 
-  #build XML doc
-  my $xml_doc      = XML::LibXML::Document->new( '1.0', 'UTF-8' );
-  my $root_element = $xml_doc->createElement('CompleteMultipartUpload');
-  $xml_doc->addChild($root_element);
+  # build XML doc
 
-  # Add the content
-  foreach my $part_num ( sort { $a <=> $b } keys %{$parts_hr} ) {
-
-    # For each part, create a <Part> element with the part number & etag
-    my $part = $xml_doc->createElement('Part');
-    $part->appendTextChild( 'PartNumber' => $part_num );
-    $part->appendTextChild( 'ETag'       => $parts_hr->{$part_num} );
-    $root_element->addChild($part);
-  } ## end foreach my $part_num ( sort...)
-
-  my $content = $xml_doc->toString;
+  my $content = make_xml_document_simple($parts_hr);
 
   $self->account->get_logger->debug("content: \n$content");
 

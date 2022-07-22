@@ -207,7 +207,7 @@ for my $location (@REGIONS) {
     skip "invalid response to 'list'"
       if !$response;
 
-    is( $response->{bucket}, $bucketname =~ s/^\///r )
+    is( $response->{bucket}, $bucketname_raw )
       or BAIL_OUT( Dumper [$response] );
 
     ok( !$response->{prefix} );
@@ -373,11 +373,7 @@ for my $location (@REGIONS) {
       BAIL_OUT( $s3->err . ": " . $s3->errstr );
     } ## end if ( !$response )
 
-    is(
-      $response->{bucket},
-      $bucketname =~ s/^\///r,
-      "list($v) - bucketname "
-    );
+    is( $response->{bucket}, $bucketname_raw, "list($v) - bucketname " );
 
     ok( !$response->{prefix}, "list($v) - prefix empty" )
       or diag( Dumper [$response] );

@@ -21,7 +21,7 @@ use MIME::Base64 qw{encode_base64 decode_base64};
 use Scalar::Util qw{ reftype blessed };
 use List::Util qw{ any };
 use URI::Escape qw{uri_escape_utf8};
-use XML::LibXML::Simple qw{XMLin};
+use XML::Simple qw{XMLin};
 
 use parent qw{Class::Accessor::Fast};
 

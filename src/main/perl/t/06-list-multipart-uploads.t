@@ -14,7 +14,7 @@ use Digest::MD5::File qw(file_md5_hex);
 use English qw{-no_match_vars};
 use File::Temp qw{ tempfile };
 use Test::More;
-use XML::LibXML::Simple qw{XMLin};
+use XML::Simple qw{XMLin};
 
 my $host;
 
@@ -84,7 +84,9 @@ else {
   );
 } ## end else [ if ( $ENV{AMAZON_S3_CREDENTIALS...})]
 
+########################################################################
 sub list_multipart_uploads {
+########################################################################
   my ($bucket_obj) = @_;
 
   my $xml = $bucket_obj->list_multipart_uploads;

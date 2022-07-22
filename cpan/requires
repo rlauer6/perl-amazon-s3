@@ -11,5 +11,4 @@ Pod::Markdown
 Readonly 2.05
 URI 5.10
 URI::Escape 5.10
-XML::LibXML::Simple 0
-XML::LibXML 0
+XML::Simple 0

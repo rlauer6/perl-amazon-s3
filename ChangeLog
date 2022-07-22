@@ -1,3 +1,16 @@
+Fri Jul 22 14:47:30 2022  Rob Lauer  <rlauer@usgn.net>
+
+	[0.55 - testing, revert to XML::Simple]:
+	* src/main/perl/t/01-api.t: remove /r option in regex
+	* src/main/perl/t/04-list-buckets: likewise
+	* src/main/perl/lib/Amazon/S3.pm: use XML::Simple
+	* src/main/perl/lib/Amazon/S3/Bucket.pm.in: likewise
+	(make_xml_document_simple): new
+	* src/main/perl/t/06-list-multipart-uploads.t: XML::Simple
+	* configure.ac: remove Lib::XML, Lib::XML::Simple, add XML::Simple
+	* cpan/requires: likewise
+	* TODO.md: new
+
 Thu Jul 21 11:14:16 2022  Rob Lauer  <rlauer@usgn.net>
 
 	[0.55 - CI/CD]:
