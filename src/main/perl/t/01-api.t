@@ -153,7 +153,7 @@ for my $location (@REGIONS) {
     };
 
     if ( $EVAL_ERROR || !$bucket_obj ) {
-      diag( $s3->err . ": " . $s3->errstr );
+      diag( Dumper( [ $EVAL_ERROR, $s3->err, $s3->errstr, $s3->error ] ) );
     } ## end if ( $EVAL_ERROR || !$bucket_obj)
 
     last if $bucket_obj;
@@ -219,7 +219,7 @@ for my $location (@REGIONS) {
     is( $response->{is_truncated}, 0 );
 
     is_deeply( $response->{keys}, [] )
-      or BAIL_OUT( Dumper( [$response] ) );
+      or diag( Dumper( [$response] ) );
 
     is( undef, $bucket_obj->get_key("non-existing-key") );
   } ## end SKIP:

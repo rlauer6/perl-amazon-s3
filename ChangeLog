@@ -1,4 +1,50 @@
-Fri Jul 22 14:47:30 2022  Rob Lauer  <rlauer@usgn.net>
+Mon Aug  1 15:44:04 2022  Rob Lauer  <rlauer6@comcast.net>
+
+	[0.55 - bucket region]:
+	* requires: latest version of most modules
+	* src/main/perl/lib/Amazon/S3.pm.in
+	- pod tweaks, corrections
+	- don't specify a minimum version of perl
+	(new): set default region to 'us-east-1', again
+	(get_bucket_location): $bucket, not $self
+	(buckets)
+	- verify region option
+	- pass hash of options and region to _send_request
+	(add_bucket)
+	- do not add region constraint if us-east-1
+	- refactored, send region to _send_request_expect_nothing
+	(delete_bucket): likewise refactored
+	(list_bucket): likewise refactored
+	(_make_request): use region() method of signer
+	(_do_http): debug statements, set last_reponse, reset_errors
+	(_do_http_no_redirect): likewise
+	(_send_request_expect_nothing): likewise
+	(_send_request_expect_nothing_probed)
+	- accept hash argument
+	- debug statements
+	- croak if redirect, but no Location
+	(error): new
+	(reset_errors): new
+	(_remember_error): set error
+	* src/main/perl/lib/Amazon/S3/Bucket.pm.in
+	- pod tweaks, corrections
+	(new)
+	- + logger attribute
+	- + verify_region attribute, verify region if true
+	(_uri): remove leading '/'
+	(add_key): correct region if 301 response
+	(upload_multipart_object): debug messages
+	(upload_part_of_multipart_upload): likewise
+	(complete_multipart_upload): likewise
+	(get_key): remove redundant debug message
+	(delete_key): pass region to _send_request_expect_nothing
+	(set_acl): likewise
+	* src/main/perl/t/01-api.t: do not bailout on early tests
+	(error): new
+	(last_response): new
+	* src/main/perl/t/03-region.t: default region is us-east-1
+
+Fri Jul 22 14:47:30 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.55 - testing, revert to XML::Simple]:
 	* src/main/perl/t/01-api.t: remove /r option in regex
@@ -11,7 +57,7 @@ Fri Jul 22 14:47:30 2022  Rob Lauer  <rlauer@usgn.net>
 	* cpan/requires: likewise
 	* TODO.md: new
 
-Thu Jul 21 11:14:16 2022  Rob Lauer  <rlauer@usgn.net>
+Thu Jul 21 11:14:16 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.55 - CI/CD]:
 	* .github/workflows/build.yml: remove make cpan

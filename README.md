@@ -107,11 +107,38 @@ dependencies. Below is the original description of the module._
 
 # LIMITATIONS AND DIFFERENCES WITH EARLIER VERSIONS
 
-As noted this module is no longer a _drop-in_ replacement for
-`Net::Amazon::S3` and has limitations and differences that may make the use of this
-module in your applications questionable.
+As noted, this module is no longer a _drop-in_ replacement for
+`Net::Amazon::S3` and has limitations and differences that may make
+the use of this module in your applications questionable.
 
-- API Signing
+- MINIMUM PERL
+
+    Technically, this module should run on versions 5.10 and above,
+    however some of the dependencies may require higher versions of
+    `perl` or install new versions some dependencies that conflict with
+    other versions of dependencies...it's a crapshoot when dealing with
+    older `perl` version and CPAN modules.
+
+    You may however, be able to build this module by installing older
+    versions of those dependencies and take your chances that those older
+    versions provide enough working features to support `Amazon::S3`. It
+    is likely they do...and this module has recently been tested on
+    version 5.10.0 `perl` using some older CPAN modules to resolve
+    dependency issues.
+
+    To build this module on an earlier version of `perl` you may need to
+    downgrade some modules.  In particular I have found this recipe to
+    work for building and testing on 5.10.0.
+
+    In this order install:
+
+        HTML::HeadParser 2.14
+        LWP 6.13
+        Amazon::S3 0.55
+
+    ...other versions _may_ work...YMMV.
+
+- \* API Signing
 
     Making calls to AWS APIs requires that the calls be signed.  Amazon
     has added a new signing method (Signature Version 4) to increase
@@ -130,29 +157,32 @@ module in your applications questionable.
 
         Unlike Signature Version 2, Version 4 requires a regional
         parameter. This implies that you need to supply the bucket's region
-        when signing requests for any API call that involve a specific
+        when signing requests for any API call that involves a specific
         bucket. Starting with version 0.55 of this module,
-        `Amazon::S3::Bucket` will have a new method (`region()` and accept
-        in the constructor a `region` parameter.  If one is not supplied, the
-        region for the bucket will be determined for you by calling the
+        `Amazon::S3::Bucket` provides a new method (`region()` and accepts
+        in the constructor a `region` parameter.  If a region is not
+        supplied, the region for the bucket will be set to the region set in
+        the `account` object (`Amazon::S3`) that you passed to the bucket's
+        new constructor.  Alternatively, you can request that the bucket's new
+        constructor determine the bucket's region for you by calling the
         `get_location_constraint()` method.
 
         When signing API calls, the region for the specific bucket will be
         used. For calls that are not regional (`buckets()`, e.g.) the default
-        region sent in the `Amazon::S3` constructor will be used.
+        region ('us-east-1') will be used.
 
     - Signature Version 2
 
         [https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html)
 
-- New APIs
+- \* New APIs
 
-    This module does not support some of the new API method calls
-    available for S3 since its original creation.
+    This module does not support some of the newer API method calls
+    for S3 added after the initial creation of this interface.
 
-- Multipart Upload Support
+- \* Multipart Upload Support
 
-    There are currently no unit tests for multipart uploads.
+    There is limited testing for multipart uploads.
 
     For more information regarding multi-part uploads visit the link below.
 
@@ -251,7 +281,7 @@ Create a new S3 client object. Takes some arguments:
 
     The AWS region you where your bucket is located.
 
-    default: no region
+    default: us-east-1
 
 - buffer\_size
 
@@ -292,7 +322,7 @@ false value.
 - 3. Pass credentials, set `cache_signer` to a false value.
 
     Unfortunately, while this will prevent [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4)
-    from hanging on to your credentials, you credentials will be store in
+    from hanging on to your credentials, you credentials will be stored in
     the [Amazon::S3](https://metacpan.org/pod/Amazon%3A%3AS3) object.
 
     Starting with version 0.55 of this module, if you have installed
@@ -300,7 +330,7 @@ false value.
     encrypted using a random key created when the class is
     instantiated. While this is more secure than leaving them in
     plaintext, if the key is discovered (the key however is not stored in
-    the object's hash) and the object is dumped, your encrypted
+    the object's hash) and the object is dumped, your _encrypted_
     credentials can be exposed.
 
 - 4. Use very granular credentials for bucket access only.
@@ -317,17 +347,46 @@ false value.
     See Also [Amazon::Credentials](https://metacpan.org/pod/Amazon%3A%3ACredentials) for more information about safely
     storing your credentials and preventing exfiltration.
 
-## adjust\_region
+## region
 
-Sets the region for the signing object to be appropriate for the bucket
+Sets the region for the for the API calls. This will also be the
+default when instantiating the bucket object unless you pass the
+region parameter in the `bucket` method or use the `verify_region`
+flag that will _always_ verify the region of the bucket using the
+`get_location_constraint` method.
+
+default: us-east-1
 
 ## buckets
 
-Returns `undef` on error, else HASHREF of results:
+    buckets([verify-region])
+
+- verify-region (optional)
+
+    `verify-region` is a boolean value that indicates if the
+    bucket's region should be verified when the bucket object is
+    instantiated.
+
+    If set to true, this method will call the `bucket` method with
+    `verify_region` set to true causing the constructor to call the
+    `get_location_constraint` for each bucket to set the bucket's
+    region. This will cause a significant decrease in the peformance of
+    the `buckets()` method. Setting the region for each bucket is
+    necessary since API operations on buckets require the region of the
+    bucket when signing API requests. If all of your buckets are in the
+    same region and you have passed a region parameter to your S3 object,
+    then that region will be used when calling the constructor of your
+    bucket objects.
+
+    default: false
+
+Returns a HASHREF containging the metadata for all of the buckets
+owned by the accout or (see below) or `undef` on
+error.
 
 - owner\_id
 
-    The owner's ID of the buckets owner.
+    The owner ID of the bucket's owner.
 
 - owner\_display\_name
 
@@ -338,37 +397,75 @@ Returns `undef` on error, else HASHREF of results:
     Any ARRAYREF of [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) objects for the 
     account.
 
-## add\_bucket 
+## add\_bucket
 
-Takes a HASHREF:
+    add_bucket(bucket-configuration)
+
+`bucket-configuration` is a reference to a hash with bucket configuration
+parameters.
 
 - bucket
 
-    The name of the bucket you want to add
+    The name of the bucket. See [Bucket name
+    rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html)
+    for more details on bucket naming rules.
 
 - acl\_short (optional)
 
     See the set\_acl subroutine for documenation on the acl\_short options
 
-Returns 0 on failure or a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object on success
+- location\_constraint
+- region
 
-## bucket BUCKET
+    The region the bucket is to be created in.
 
-Takes a scalar argument, the name of the bucket you're creating
+Returns a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object on success or `undef` on failure.
 
-Returns an (unverified) bucket object from an account. This method does not access the network.
+## bucket
+
+    bucket(bucket, [region])
+
+    bucket({ bucket => bucket-name, verify_region => boolean, region => region });
+
+Takes a scalar argument or refernce to a hash of arguments.
+
+You can pass the region or set `verify_region` indicating that
+you want the bucket constructor to detemine the bucket region.
+
+If you do not pass the region or set the `verify_region` value, the
+region will be set to the default region set in your `Amazon::S3`
+object.
+
+See [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) for a complete description of the `bucket`
+method.
 
 ## delete\_bucket
 
-Takes either a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object or a HASHREF containing 
+Takes either a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object or a HASHREF containing:
 
 - bucket
 
     The name of the bucket to remove
 
-Returns false (and fails) if the bucket isn't empty.
+- region
 
-Returns true if the bucket is successfully deleted.
+    Region the bucket is located in. If not provided, the method will
+    determine the bucket's region by calling `get_bucket_location`.
+
+Returns a boolean indicating the success of failure of the API
+call. Check `err` or `errstr` for error messages.
+
+Note from the [Amazon's documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/BucketRestrictions.html)
+
+> If a bucket is empty, you can delete it. After a bucket is deleted,
+> the name becomes available for reuse. However, after you delete the
+> bucket, you might not be able to reuse the name for various reasons.
+>
+> For example, when you delete the bucket and the name becomes available
+> for reuse, another AWS account might create a bucket with that
+> name. In addition, **some time might pass before you can reuse the name
+> of a deleted bucket**. If you want to use the same bucket name, we
+> recommend that you don't delete the bucket.
 
 ## dns\_bucket\_names
 
@@ -527,6 +624,18 @@ to S3 under the hood.
 Takes the same arguments as list\_bucket.
 
 _You are encouraged to use the newer `list_bucket_all_v2` method._
+
+## err
+
+The S3 error code for the last error encountered.
+
+## errstr
+
+A human readable error string for the last error encountered.
+
+## error
+
+The decoded XML string as a hash object of the last error.
 
 ## last\_response
 
@@ -709,3 +818,19 @@ terms of the Artistic License are described at
 http://www.perl.com/language/misc/Artistic.html. Except
 where otherwise noted, `Amazon::S3` is Copyright 2008, Timothy
 Appnel, tima@cpan.org. All rights reserved.
+
+# POD ERRORS
+
+Hey! **The above document had some coding errors, which are explained below:**
+
+- Around line 1555:
+
+    Expected text after =item, not a bullet
+
+- Around line 1596:
+
+    Expected text after =item, not a bullet
+
+- Around line 1601:
+
+    Expected text after =item, not a bullet

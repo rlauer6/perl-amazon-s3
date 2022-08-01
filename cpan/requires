@@ -1,14 +1,17 @@
-Class::Accessor::Fast 0.51
-Digest::HMAC_SHA1 1.04
-Digest::MD5::File 0.08
-HTTP::Date 6.02
+Class::Accessor::Fast 0
+Digest::HMAC_SHA1 0
+Digest::MD5::File 0
+HTTP::Date 0
 +List::Util 1.5
 IO::Scalar 0
-LWP::UserAgent::Determined 1.07
+Net::HTTP 0
+LWP
+LWP::UserAgent::Determined 0
+LWP::Protocol::https 0
 Net::Amazon::Signature::V4 0
 Pod::Markdown
 +JSON:PP 0
-Readonly 2.05
-URI 5.10
-URI::Escape 5.10
+Readonly 0
+URI 0
+URI::Escape 0
 XML::Simple 0
