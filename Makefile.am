@@ -33,7 +33,7 @@ rpm:
 	cd $(abs_builddir) && $(MAKE) dist
 	TARBALL=$$(ls -1rt *.tar.gz | tail -1); \
 	$(rpmbuild) -tb $$TARBALL
-	find $$HOME/rpmbuild -name '*.rpm' | grep $(PACKAGE)
+	find $$HOME/rpm -name '*.rpm' | grep $(PACKAGE)
 
 cpan:
 	cd $(abs_builddir) && $(MAKE)
