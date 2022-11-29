@@ -1,3 +1,27 @@
+Mon Aug  1 16:11:48 2022  Rob Lauer  <rlauer@usgn.net>
+
+	[0.56 - minor bug, 0.55 issues #8]:
+	* buildspec.yml: files should be relative to project home
+	* VERSION: bump
+	* src/main/perl/lib/Amazon/S3.pm.in
+	- pod tweaks
+	(new)
+	- set -key and -pass  for legacy Crypt::CBC
+	(buckets): avoid return explicit undef
+	(list_bucket)
+	- remove undefined hash members from input
+	* src/main/perl/lib/Amazon/S3/Bucket.pm.in
+	(last_response): typo, should be last_response(), not last_reponse()
+	(_uri): minor refactoring for clarity
+	(add_key): likewise, return a return code
+	(_add_key): minor refactoring
+	(get_key): minor refactoring, do not return explicit undef
+	(delete_key): minor refactoring for clarity
+	(set_acl): likewise
+	(get_acl)
+	- likewise
+	- return undef if 404 rather than croak
+
 Mon Aug  1 15:44:04 2022  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.55 - bucket region]:

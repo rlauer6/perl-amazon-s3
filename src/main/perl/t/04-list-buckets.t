@@ -12,8 +12,8 @@ use English qw{-no_match_vars};
 use Test::More;
 use Data::Dumper;
 
-my $aws_access_key_id     = $ENV{'AWS_ACCESS_KEY_ID'};
-my $aws_secret_access_key = $ENV{'AWS_ACCESS_KEY_SECRET'};
+my $aws_access_key_id     = $ENV{'AWS_ACCESS_KEY_ID'}     // 'foo';
+my $aws_secret_access_key = $ENV{'AWS_ACCESS_KEY_SECRET'} // 'foo';
 my $token                 = $ENV{'AWS_SESSION_TOKEN'};
 
 my $host = $ENV{S3_HOST};
@@ -51,7 +51,8 @@ else {
     { aws_access_key_id     => $aws_access_key_id,
       aws_secret_access_key => $aws_secret_access_key,
       token                 => $token,
-      host                  => $host
+      host                  => $host,
+      secure                => $host ? 0 : 1,         # if host then probably container
     }
   );
 } ## end else [ if ( $ENV{AMAZON_S3_CREDENTIALS...})]
@@ -154,6 +155,7 @@ subtest 'list' => sub {
   is( @key_list, 10, 'got 10 keys' )
     or diag( Dumper( \@key_list ) );
 };
+
 subtest 'list-v2' => sub {
 
   my $marker = '';
