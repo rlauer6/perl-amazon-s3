@@ -7,6 +7,20 @@ previous versions.  If critical bugs are found in any of the software,
 notice of such bugs and the versions in which they were fixed will be
 noted here, as well.
 
+# perl-Amazon-S3 0.56 (2022-11-29)
+
+## Enhancements
+
+None
+
+## Fixes
+
+* issue #8 - typo in Amazon::S3::Bucket::last_response()
+* minor refactoring
+* Amazon::S3::Bucket::get_acl()
+  - return undef on 404 instead of croaking
+* Amazon::S3 - minor refactoring, see ChangeLog
+
 # perl-Amazon-S3 0.55 (2022-08-01)
 
 ## Enhancements

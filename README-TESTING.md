@@ -20,7 +20,7 @@ with additional environment variables described below.
 | `AWS_ACCESS_KEY_ID` | Your AWS access key |
 | `AWS_ACCESS_KEY_SECRET` | Your AWS sekkr1t passkey. Be forewarned that setting this environment variable on a shared system might leak that information to another user. Be careful. |
 | `AWS_SESSION_TOKEN` |  Optional session token. |
-| `AMAZON_S3_HOST` | Defaults to s3.amazonaws.com.  Set this for example if you want to test the module against an API compatible service like minio. |
+| `S3_HOST` | Defaults to s3.amazonaws.com.  Set this for example if you want to test the module against an API compatible service like minio. |
 | `AMAZON_S3_SKIP_ACL_TESTS` |  Doesn't matter what you set it to. Just has to be set if you want to skip ACLs tests. |
 | `AMAZON_S3_SKIP_REGION_CONSTRAINT_TEST` |  Doesn't matter what you set it to. Just has to be set if you want to skip region constraint test. |
 | `AMAZON_S3_MINIO` | Doesn't matter what you set it to. Just has to be set if you want to skip tests that would fail on minio. |
@@ -83,3 +83,70 @@ Both of these implement a subset of the S3 API. __Note that Some tests will fail
 on both services (as of the writing of this document).__ To make it
 through the tests, try setting one or more of the environment
 variables above which will selectively skip some test.
+
+## Testing with LocalStack
+
+LocalStack seems to be the easiest to work with and supports a number
+of AWS APIs. A `docker-compose.yml` file is included now in the
+project.
+
+```
+version: "3.8"
+
+services:
+  localstack:
+    container_name: "${LOCALSTACK_DOCKER_NAME-localstack_main}"
+    image: localstack/localstack
+    hostname: s3
+    networks:
+      default:
+        aliases:
+          - s3.localhost.localstack.cloud
+          - net-amazon-s3-test-test.localhost.localstack.cloud
+    ports:
+      - "127.0.0.1:4510-4530:4510-4530"
+      - "127.0.0.1:4566:4566"
+      - "127.0.0.1:4571:4571"
+    environment:
+      - SERVICES=s3,ssm,secretsmanager,kms,sqs,ec2,events,sts,logs
+      - DEBUG=${DEBUG-}
+      - DATA_DIR=${DATA_DIR-}
+      - LAMBDA_EXECUTOR=${LAMBDA_EXECUTOR-}
+      - HOST_TMP_FOLDER=${TMPDIR:-/tmp/}localstack
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      -  "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+```
+
+When testing with LocalStack you'll need to set some environment
+variables to get through (the majority) of the tests.
+
+Environment Variable | Value | Description
+-------------------- | ----- | ----------- 
+AMAZON_EXPENSIVE_TESTS | 1 | enables testing of S3 API
+S3_HOST | localhost:4566
+AMAZON_S3_LOCALSTACK | any | skips some tests that will fail on LocalStack
+AWS_ACCESS_KEY_ID | test | AWS access key for LocalStack
+AWS_ACCESS_KEY_SECRET | test | AWS secret access key for LocalStack
+
+In order to test domain name buckets, you will need to spoof a domain
+name for your bucket by setting the name of the bucket in your
+`/etc/hosts` file.
+
+```
+127.0.0.1 localhost net-amazon-s3-test-test.s3.localhost.localstack.cloud
+```
+
+To run tests using LocalStack...
+
+```
+make test \
+  AMAZON_S3_EXPENSIVE_TESTS=1
+  S3_HOST=s3.localhost.localstack.cloud:4566 \
+  AMAZON_S3_LOCALSTACK=1 \
+  AWS_ACCESS_KEY_ID=test \
+  AWS_ACCESS_SECRET_KEY=test  \
+  AMAZON_S3_DOMAIN_BUCKET_NAMES=1
+```
+
