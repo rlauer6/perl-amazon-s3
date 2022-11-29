@@ -11,7 +11,7 @@ noted here, as well.
 
 ## Enhancements
 
-None
+* better(?) handling of domain bucket names (Amazon::S3::_make_request())
 
 ## Fixes
 

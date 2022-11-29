@@ -14,6 +14,7 @@ use Digest::HMAC_SHA1;
 use Digest::MD5 qw{md5_hex};
 use English qw{-no_match_vars};
 use HTTP::Date;
+use URI;
 use LWP::UserAgent::Determined;
 use MIME::Base64 qw{encode_base64 decode_base64};
 use Scalar::Util qw{ reftype blessed };
@@ -860,7 +861,28 @@ sub _make_request {
   if ( $path =~ m{\A([^/?]+)(.*)}xsm
     && $self->dns_bucket_names
     && _can_bucket_be_subdomain($1) ) {
-    $url = "$protocol://$1.$host$2";
+
+    my $bucket = $1;
+    my $suffix = $2;
+
+    if ( $host =~ /([^:]+):([^:]\d+)$/xsm ) {
+
+      eval {
+        my $port = $2;
+        $host = $1;
+
+        my $uri = URI->new("http://$bucket.host");
+        $uri->scheme('http');
+        $uri->host("$bucket.$host");
+        $uri->port($port);
+        $uri->path($suffix);
+        $url = $uri;
+      };
+
+    }
+    else {
+      $url = "$protocol://$bucket.$host$suffix";
+    }
   }
 
   my $request = HTTP::Request->new( $method, $url, $http_headers );
@@ -1081,6 +1103,7 @@ sub _send_request_expect_nothing {
   my $request = $self->_make_request(@args);
 
   my $response = $self->_do_http($request);
+  $self->get_logger->debug( Dumper( [$response] ) );
 
   my $content = $response->content;
 

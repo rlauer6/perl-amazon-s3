@@ -51,6 +51,7 @@ else {
     { aws_access_key_id     => $aws_access_key_id,
       aws_secret_access_key => $aws_secret_access_key,
       token                 => $token,
+      debug                 => $ENV{DEBUG},
       host                  => $host,
       secure                => $host ? 0 : 1,         # if host then probably container
     }
@@ -73,8 +74,11 @@ is( ref $bucket_obj, 'Amazon::S3::Bucket', 'created bucket' . $bucketname )
 my $response = $bucket_obj->list
   or BAIL_OUT( $s3->err . ": " . $s3->errstr );
 
-is( $response->{bucket}, $bucketname_raw, 'no bucket name is list response' )
-  or BAIL_OUT( Dumper [$response] );
+is( $response->{bucket}, $bucketname_raw, 'no bucket name in list response' )
+  or do {
+  diag( Dumper( [$response] ) );
+  BAIL_OUT( Dumper [$response] );
+  };
 
 ok( !$response->{prefix}, 'no prefix in list response' );
 ok( !$response->{marker}, 'no marker in list response' );
