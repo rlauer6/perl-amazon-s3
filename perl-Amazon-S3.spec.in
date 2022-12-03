@@ -32,8 +32,7 @@ License:    Artistic License
 Prefix:     /usr/local
 Group:      Foreign
 
-# Requires:
-# BuildRequires:
+Requires: perl(Net::Amazon::Signature::V4)
 
 %description
 Perl interface to Amazon S3

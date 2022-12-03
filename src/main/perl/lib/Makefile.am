@@ -32,7 +32,7 @@ GAMAZON_S3_SIGNATURE_PERLMODULES = $(AMAZON_S3_SIGNATURE_PERLMODULES:.pm.in=.pm)
 
 amazondir = $(perl5libdir)/Amazon
 amazon_s3dir = $(amazondir)/S3
-amazon_s3_signaturedir = $(amazondir)/S3
+amazon_s3_signaturedir = $(amazondir)/S3/Signature
 
 amazon_DATA = $(GAMAZON_PERLMODULES:pm.in=.pm)
 amazon_s3_DATA = $(GAMAZON_S3_PERLMODULES:pm.in=.pm)
