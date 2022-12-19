@@ -3,6 +3,7 @@ project:
   author:
     name: Rob Lauer
     mailto: rlauer6@comcat.net
+min-perl-version: 5.10.0
 pm_module: Amazon::S3
 dependencies:
     requires: requires
