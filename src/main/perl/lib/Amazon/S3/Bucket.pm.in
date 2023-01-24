@@ -690,6 +690,49 @@ sub get_key_filename {
 } ## end sub get_key_filename
 
 # returns bool
+
+########################################################################
+sub copy_key {
+########################################################################
+   my ($self, $inkey, $outkey, $method, $filename) = @_;
+   $method ||= "PUT";
+   $filename = $$filename if ref $filename;
+   my $acct = $self->account;
+   my $request = $acct->_make_request($method, $self->_uri($outkey), {
+      # Need to prepend source bucket to x-amz-copy-source
+      'x-amz-copy-source' => $self->{bucket}."/".$inkey,
+      'x-amz-tagging-directive' => 'COPY',
+   });
+
+   my $response = $acct->_do_http($request, $filename);
+
+   if ($response->code == 404) {
+     return undef;
+   }
+
+   $acct->_croak_if_response_error($response);
+
+   my $etag = $response->header('ETag');
+   if ($etag) {
+     $etag =~ s/^"//;
+     $etag =~ s/"$//;
+   }
+
+   my $return = {
+     content_length => $response->content_length || 0,
+     content_type   => $response->content_type,
+     etag           => $etag,
+     value          => $response->content,
+   };
+
+   foreach my $header ($response->headers->header_field_names) {
+     next unless $header =~ /x-amz-meta-/i;
+     $return->{lc $header} = $response->header($header);
+   }
+
+   return $return;
+}; ## end sub copy_key
+
 ########################################################################
 sub delete_key {
 ########################################################################

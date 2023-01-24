@@ -42,6 +42,11 @@ managing Amazon S3 buckets and keys.
         }
     );
     
+    # copy a key within the bucket
+    $bucket->copy_key(
+        $keyname, $newUwUkeyname
+    );
+    
     # list keys in the bucket
     $response = $bucket->list
         or die $s3->err . ": " . $s3->errstr;
