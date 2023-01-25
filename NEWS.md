@@ -7,6 +7,48 @@ previous versions.  If critical bugs are found in any of the software,
 notice of such bugs and the versions in which they were fixed will be
 noted here, as well.
 
+# perl-Amazon-S3 0.59 (2023-01-25)
+
+This version adds the `copy_object()` method.
+
+## Enhancements
+
+* `copy_object()` method added to the `Amazon::S3::Bucket` class
+* added unit test for `copy_object()` to `t/01-api` (more tests needed)
+
+## Fixes
+
+* corrected documentation in ['README-TESTING.md`](README-TESTING.md)
+* corrected comments in
+  ['src/main/perl/Makefile.am'](src/main/perl/Makefile.am)
+* changed use of S3_HOST environment variable to AMAZON_S3_HOST in (`t/04-list-buckets.t`)[t/04-list-buckets.t]
+
+# perl-Amazon-S3 0.58 (2022-12-19)
+
+This version pegs the minimum `perl` version to 5.010.
+
+## Enhancements
+
+None
+
+## Fixes
+
+* add JSON:PP to requires
+* set minimum `perl` version to 5.010
+
+# perl-Amazon-S3 0.57 (2022-12-03)
+
+This version fixes RPM packaging.
+
+## Enhancements
+
+None
+
+## Fixes
+
+* install `Amazon::S3::Signature::V4` to correct directory
+* add Net::Amazon::Signature::V4 to Requires
+
 # perl-Amazon-S3 0.56 (2022-11-29)
 
 ## Enhancements
