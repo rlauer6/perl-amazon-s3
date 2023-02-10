@@ -3,9 +3,12 @@
 
 function _bump {
     version=$(mktemp)
-    eval $(echo perl -ne "'my \$p=$1; my @v=split /\./; \$v[2]=0 if \$p == 1; \$v[1] = \$v[2] = 0 unless \$p; \$v[\$p]++; print join(\".\", @v);'" VERSION) > $version
-    test -e "$version" && mv $version VERSION
 
+    # if it's M.m.r or M.rr
+    
+    eval $(echo perl -ne "'chomp; \$p=$1; \$r=\$_;  @v=split /\./, $r; if ( @v == 3) { \$v[2]=0 if \$p == 1; \$v[1] = \$v[2] = 0 unless \$p; \$v[\$p]++; print join(\".\", @v);}else{printf q{%5.2f}, \$r+.01;}'" VERSION) > $version
+    
+    test -e "$version" && mv $version VERSION
     echo -n "rebuilding for VERSION: $(cat VERSION)..."
     
     if test -x bootstrap; then

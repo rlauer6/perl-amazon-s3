@@ -11,3 +11,7 @@ config.log
 Makefile
 src/main/perl/lib/**/*.pm
 **/#*
+cpan/extra-files
+cpan/resources
+cpan/provides
+volume/*

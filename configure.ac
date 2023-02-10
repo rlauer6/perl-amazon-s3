@@ -6,7 +6,7 @@ if test -z "$VERSION"; then \
 fi; \
 echo $VERSION
 ]),
-        m4_esyscmd_s([if test -z "$EMAIL"; then EMAIL=rclauer@gmail,com; fi; echo $EMAIL]),[perl-Amazon-S3])
+        m4_esyscmd_s([if test -z "$EMAIL"; then EMAIL=rclauer@gmail.com; fi; echo $EMAIL]),[perl-Amazon-S3])
 
 __poor_mans_expand_file_name () {
     _tmp_name=$1
@@ -80,7 +80,7 @@ AC_SUBST([do_subst_command])
 AC_CONFIG_AUX_DIR([autotools])
 AC_CONFIG_MACRO_DIR([autotools])
 
-AM_INIT_AUTOMAKE([-Wall foreign tar-ustar])
+AM_INIT_AUTOMAKE([foreign tar-ustar])
 
 AC_PATH_PROG([BASHRUN],
 	[bash])
