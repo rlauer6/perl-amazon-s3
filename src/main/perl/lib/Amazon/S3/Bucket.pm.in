@@ -769,6 +769,47 @@ sub delete_key {
 } ## end sub delete_key
 
 ########################################################################
+sub delete_keys {
+########################################################################
+  my ( $self, @keys ) = @_;
+
+  croak 'must specify keys'
+    if scalar @keys == 0;
+
+  croak 'must not exceed 1000 keys'
+    if scalar @keys > 1000;
+
+  my $content = '<Delete>';
+
+  foreach my $key (@keys) {
+    croak 'all keys must be valid'
+      if !$key || !(length $key);
+
+    $content .= "<Object><Key>$key</Key></Object>";
+  }
+
+  $content .= '</Delete>';
+
+  my $conf = {};
+  my $account = $self->account;
+
+  my $md5        = md5($content);
+  my $md5_base64 = encode_base64($md5);
+  chomp $md5_base64;
+
+  $conf->{'Content-MD5'} = $md5_base64;
+
+  return $account->_send_request_expect_nothing(
+    { method  => 'POST',
+      region  => $self->region,
+      path    => $self->_uri() . '?delete',
+      headers => $conf,
+      data    => $content
+    }
+  );
+} ## end sub delete_keys
+
+########################################################################
 sub delete_bucket {
 ########################################################################
   my ($self) = @_;
