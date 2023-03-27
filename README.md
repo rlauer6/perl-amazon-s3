@@ -58,9 +58,6 @@ managing Amazon S3 buckets and keys.
 
     # delete key from bucket
     $bucket->delete_key($keyname);
-
-    # delete keys from bucket
-    $bucket->delete_keys(@keynames);
     
     # delete bucket
     $bucket->delete_bucket;

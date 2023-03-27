@@ -7,7 +7,7 @@ use parent qw{Exporter};
 
 use Readonly;
 
-our $VERSION = '@PACKAGE_VERSION@';
+our $VERSION = '@PACKAGE_VERSION@'; ## no critic (RequireInterpolation)
 
 # defaults
 Readonly our $AMAZON_HEADER_PREFIX            => 'x-amz-';
@@ -20,6 +20,10 @@ Readonly our $MAX_BUCKET_NAME_LENGTH          => 64;
 Readonly our $MIN_BUCKET_NAME_LENGTH          => 3;
 Readonly our $MIN_MULTIPART_UPLOAD_CHUNK_SIZE => 5 * 1024 * 1024;
 Readonly our $DEFAULT_LOG_LEVEL               => 'error';
+Readonly our $MAX_DELETE_KEYS                 => 1000;
+
+Readonly our $XMLDECL  => '<?xml version="1.0" encoding="UTF-8"?>';
+Readonly our $S3_XMLNS => 'http://s3.amazonaws.com/doc/2006-03-01/';
 
 Readonly::Hash our %LOG_LEVELS => (
   trace => 5,
@@ -76,8 +80,11 @@ our %EXPORT_TAGS = (
       %LOG_LEVELS
       $DEFAULT_HOST
       $MAX_BUCKET_NAME_LENGTH
+      $MAX_DELETE_KEYS
       $MIN_BUCKET_NAME_LENGTH
       $MIN_MULTIPART_UPLOAD_CHUNK_SIZE
+      $S3_XMLNS
+      $XMLDECL
     }
   ],
 );
@@ -87,6 +94,8 @@ our @EXPORT_OK = map { @{ $EXPORT_TAGS{$_} } } keys %EXPORT_TAGS;
 $EXPORT_TAGS{all} = [@EXPORT_OK];
 
 1;
+
+## no critic (RequirePodSections)
 
 __END__
 

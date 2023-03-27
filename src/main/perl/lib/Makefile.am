@@ -70,7 +70,7 @@ Amazon/S3/Logger.pm: Amazon/S3/Constants.pm
 	test -d "$$(dirname "$@")" || $(INSTALL) -d "$$(dirname "$@")"
 	$(do_subst) $< > $@
 	set -e; \
-	$(perlwc) $(PERLINCLUDE) $@ || { ret=$$?; rm $@ && exit $$?; }
+	$(perlwc) $(PERLINCLUDE) $@ || { ret=$$? &&  rm $@ && false; }
 
 all:
 

@@ -4,25 +4,34 @@ use strict;
 use warnings;
 
 use Amazon::S3::Constants qw{:all};
-
 use Carp;
 use Data::Dumper;
 use Digest::MD5 qw(md5 md5_hex);
 use Digest::MD5::File qw(file_md5 file_md5_hex);
-use English qw{-no_match_vars};
+use English qw(-no_match_vars);
 use File::stat;
 use IO::File;
 use IO::Scalar;
 use MIME::Base64;
-use Scalar::Util qw{reftype};
+use Scalar::Util qw(reftype);
 use URI;
+use XML::Simple;
 
 use parent qw{Class::Accessor::Fast};
 
 our $VERSION = '@PACKAGE_VERSION@'; ## no critic
 
 __PACKAGE__->mk_accessors(
-  qw{bucket creation_date account buffer_size region logger verify_region });
+  qw(
+    bucket
+    creation_date
+    account
+    buffer_size
+    region
+    logger
+    verify_region
+  )
+);
 
 ########################################################################
 sub new {
@@ -163,7 +172,9 @@ sub add_key {
   return $retval;
 } ## end sub add_key
 
+########################################################################
 sub _add_key {
+########################################################################
   my ( $self, @args ) = @_;
 
   my ( $data, $headers, $key ) = @{ $args[0] }{qw{data headers key}};
@@ -190,6 +201,7 @@ sub _add_key {
     );
   }
 } ## end else [ if ( ref $value ) ]
+
 ########################################################################
 sub add_key_filename {
 ########################################################################
@@ -769,42 +781,115 @@ sub delete_key {
 } ## end sub delete_key
 
 ########################################################################
-sub delete_keys {
+sub _format_delete_keys {
 ########################################################################
-  my ( $self, @keys ) = @_;
+  my (@args) = @_;
 
-  croak 'must specify keys'
-    if scalar @keys == 0;
+  my @keys;
 
-  croak 'must not exceed 1000 keys'
-    if scalar @keys > 1000;
+  if ( ref $args[0] ) {
+    if ( reftype( $args[0] ) eq 'ARRAY' ) { # list of keys, no version ids
+      foreach my $key ( @{ $args[0] } ) {
+        if ( ref($key) && reftype($key) eq 'HASH' ) {
 
-  my $content = '<Delete>';
+          push @keys,
+            {
+            Key => [ $key->{Key} ],
+            defined $key->{VersionId}
+            ? ( VersionId => [ $key->{VersionId} ] )
+            : ()
+            };
+        }
+        else { # array of keys
+          push @keys, { Key => [$key] };
+        }
+      }
+    }
+    elsif ( reftype( $args[0] ) eq 'CODE' ) { # sub that returns key, version id
+      while ( my (@object) = $args[0]->() ) {
+        last if !@object || !defined $object[0];
 
-  foreach my $key (@keys) {
-    croak 'all keys must be valid'
-      if !$key || !(length $key);
-
-    $content .= "<Object><Key>$key</Key></Object>";
+        push @keys,
+          {
+          Key => [ $object[0] ],
+          defined $object[1] ? ( VersionId => [ $object[1] ] ) : ()
+          };
+      }
+    }
+    else {                                    # list of keys
+      croak 'argument must be array or list';
+    }
+  }
+  elsif (@args) {
+    @keys = map { { Key => [$_] } } @args;
+  }
+  else {
+    croak 'must specify keys';
   }
 
-  $content .= '</Delete>';
+  croak 'must not exceed ' . $MAX_DELETE_KEYS . ' keys'
+    if @keys > $MAX_DELETE_KEYS;
 
-  my $conf = {};
+  return \@keys;
+}
+
+#  @args => list of keys
+#  $args[0] => array of hashes (Key, [VersionId]) VersionId is optional
+#  $args[0] => array of scalars (keys)
+#  $args[0] => code reference that returns key, version id or empty
+#  $args[0] => hash ({ quiet => 1, keys => $keys})
+
+# Throws exception if no keys or in wrong format...
+########################################################################
+sub delete_keys {
+########################################################################
+  my ( $self, @args ) = @_;
+
+  my ( $keys, $quiet_mode );
+
+  if ( ref $args[0] && reftype( $args[0] ) eq 'HASH' ) {
+    ( $keys, $quiet_mode ) = @{ $args[0] }{qw(keys quiet)};
+    $keys = _format_delete_keys($keys);
+  }
+  else {
+    $keys = _format_delete_keys(@args);
+  }
+
+  if ( defined $quiet_mode ) {
+    $quiet_mode = $quiet_mode ? 'true' : 'false';
+  }
+  else {
+    $quiet_mode = 'false';
+  }
+
+  my $content = {
+    xmlns  => $S3_XMLNS,
+    Quiet  => [$quiet_mode],
+    Object => $keys
+  };
+
+  my $xml_content = XMLout(
+    $content,
+    RootName => 'Delete',
+    XMLDecl  => $XMLDECL
+  );
+
+  my $conf    = {};
   my $account = $self->account;
 
-  my $md5        = md5($content);
+  my $md5        = md5($xml_content);
   my $md5_base64 = encode_base64($md5);
+
   chomp $md5_base64;
 
   $conf->{'Content-MD5'} = $md5_base64;
 
-  return $account->_send_request_expect_nothing(
+  return $account->_send_request(
     { method  => 'POST',
       region  => $self->region,
       path    => $self->_uri() . '?delete',
       headers => $conf,
-      data    => $content
+      data    => $xml_content,
     }
   );
 } ## end sub delete_keys
@@ -1342,12 +1427,76 @@ filename that the S3 resource will be written to.
 Permanently removes C<$key_name> from the bucket. Returns a
 boolean value indicating the operations success.
 
+=head2 delete_keys @keys
+
+=head2 delete_keys $keys
+
+Permanently removes keys from the bucket. Returns the response body
+from the API call. Returns C<undef> on non '2xx' return codes.
+
+See <Deleting Amazon S3 object | https://docs.aws.amazon.com/AmazonS3/latest/userguide/DeletingObjects.html>
+
+The argument to C<delete_keys> can be:
+
+=over 5
+
+=item * list of key names
+
+=item * an array of hashes where each hash reference contains the keys
+C<Key> and optionally C<VersionId>.
+
+=item * an array of scalars where each scalar is a key name
+
+=item * a hash of options where the hash contains
+
+=item * a callback that returns the key and optionally the version id
+
+=over 10
+
+=item quiet
+
+Boolean indicating quiet mode
+
+=item keys
+
+An array of keys containing scalars or hashes as describe above.
+
+=back
+
+=back
+
+Examples:
+
+ # delete a list of keys
+ $bucket->delete_keys(qw( foo bar baz));
+
+ # delete an array of keys
+ $bucket->delete_keys([qw(foo bar baz)]);
+
+ # delete an array of keys in quiet mode 
+ $bucket->delete({ quiet => 1, keys => [ qw(foo bar baz) ]);
+
+ # delete an array of versioned objects
+ $bucket->delete_keys([ { Key => 'foo', VersionId => '1'} ]);
+
+ # callback
+ my @key_list = qw(foo => 1, bar => 3, biz => 1);
+
+ $bucket->delete_keys(
+   sub {
+     return ( shift @key_list, shift @key_list );
+   }
+ );
+
+I<When using a callback, the keys are deleted in bulk. The
+C<DeleteObjects> API is only called once.>
+
 =head2 delete_bucket
 
 Permanently removes the bucket from the server. A bucket
 cannot be removed if it contains any keys (contents).
 
-This is an alias for C<$s3->delete_bucket($bucket)>.
+This is an alias for C<$s3-E<gt>delete_bucket($bucket)>.
 
 =head2 list
 
@@ -1669,5 +1818,6 @@ Rob Lauer
 Jojess Fournier
 Tim Mullin
 Todd Rinaldo
+luiserd97
 
 =cut

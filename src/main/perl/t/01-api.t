@@ -67,7 +67,7 @@ if ( !$ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
   plan skip_all => 'Testing this module for real costs money.';
 }
 else {
-  plan tests => 76 * scalar(@REGIONS) + 2;
+  plan tests => 85 * scalar(@REGIONS) + 2;
 }
 
 ########################################################################
@@ -529,6 +529,92 @@ EOT
 
   is_deeply( $response->{keys}, [],
     'delete key from bucket - empty list of keys' );
+
+  ######################################################################
+  # delete multiple keys from bucket
+  # TODO: test deleting specific versions
+  #
+  $keyname = 'foo-';
+
+  for ( 1 .. 8 ) {
+    $bucket_obj->add_key( "$keyname$_", q{} );
+  }
+
+  $response = $bucket_obj->list
+    or die $s3->err . ": " . $s3->errstr;
+
+  my @key_list = @{ $response->{keys} };
+
+  is( 8, scalar @key_list, 'wrote 8 keys for delete_keys() test' );
+
+  ######################################################################
+  # quietly delete version keys - first two
+  ######################################################################
+  my $delete_rsp = $bucket_obj->delete_keys(
+    { quiet => 1,
+      keys  => [ map { $_->{key} } @key_list[ ( 0, 1 ) ] ]
+    }
+  );
+
+  ok( $delete_rsp, 'delete_keys() response' );
+
+  $response = $bucket_obj->list
+    or die $s3->err . ": " . $s3->errstr;
+
+  is( scalar @{ $response->{keys} }, 4, 'delete versioned keys' );
+
+  shift @key_list;
+  shift @key_list;
+
+  ######################################################################
+  # delete list of keys - next two keys
+  ######################################################################
+  $delete_rsp
+    = $bucket_obj->delete_keys( map { $_->{key} } @key_list[ ( 0, 1 ) ] );
+
+  ok( $delete_rsp, 'delete_keys() response' );
+
+  $response = $bucket_obj->list
+    or die $s3->err . ": " . $s3->errstr;
+
+  is( scalar @{ $response->{keys} }, 2, 'delete list of keys' );
+
+  shift @key_list;
+  shift @key_list;
+
+  ######################################################################
+  # delete array of keys - last two keys
+  #####################################################################
+  $delete_rsp
+    = $bucket_obj->delete_keys( map { $_->{key} } @key_list[ ( 0, 1 ) ] );
+
+  ok( $delete_rsp, 'delete_keys() response' );
+
+  $response = $bucket_obj->list
+    or die $s3->err . ": " . $s3->errstr;
+
+  is( scalar @{ $response->{keys} }, 2, 'delete array of keys' );
+
+  ######################################################################
+  # callback
+  ######################################################################
+  $delete_rsp = $bucket_obj->delete_keys(
+    sub {
+      my $key = shift @key_list;
+      return ( $key->{key}, '1' );
+    }
+  );
+
+  ok( $delete_rsp, 'delete_keys() response' );
+
+  $response = $bucket_obj->list
+    or die $s3->err . ": " . $s3->errstr;
+
+  ok( !scalar @{ $response->{keys} }, 'delete keys from callback' );
+
+  #
+  # delete multiple keys from bucket
+  ######################################################################
 
   ok( $bucket_obj->delete_bucket(), 'delete bucket' );
 }
