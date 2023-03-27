@@ -3,7 +3,12 @@ Mon Mar 27 10:47:54 2023  Rob Lauer  <rlauer6@comcast.net>
 	[0.61 - delete_keys()]:
 	* VERSION: bump
 	* NEWS.md: updated
-	* README.md
+	* README.md: generated
+	* configure.ac: add check for make-cpan-dist.pl
+	* cpan/Makefile.am: use automake var for above
+	* src/main/perl/lib/Amazon/S3/.pm.in
+	(_make_request): don't encode the query string twice
+	(_send_request): precendence wrt regexp
 	* src/main/perl/lib/Amazon/S3/Bucket.pm.in
 	(delete_keys): new
 	(_format_delete_keys): new

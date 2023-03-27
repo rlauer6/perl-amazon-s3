@@ -103,6 +103,13 @@ if test -z "$POD2MARKDOWN" ; then
   AC_MSG_ERROR([pod2markdown found?])
 fi
 
+AC_PATH_PROG([MAKE_CPAN_DIST],
+	[make-cpan-dist.pl])
+
+if test -z "$MAKE_CPAN_DIST" ; then 
+  AC_MSG_WARN([make-cpan-dist.pl not found? (you won't be able to create a CPAN distribution - https://github.com/rlauer6/make-cpan-dist.git)])
+fi
+
 AC_PATH_PROG([RPMBUILD],
 	[rpmbuild])
 
@@ -114,7 +121,7 @@ AC_PATH_PROG([SCANDEPS],
 	[scandeps-static.pl])
 
 if test -z "$SCANDEPS" ; then 
-  AC_MSG_WARN([scandeps-static.pl not found?])
+  AC_MSG_WARN([scandeps-static.pl not found? (https://metacpan.org/pod/Module::ScanDeps::Static)])
 fi
 
 perl5libdir=\${datadir}/perl5

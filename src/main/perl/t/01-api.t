@@ -556,12 +556,14 @@ EOT
     }
   );
 
-  ok( $delete_rsp, 'delete_keys() response' );
+  #  diag( Dumper( [ QUIET => $delete_rsp ] ) );
+
+  ok( !$delete_rsp, 'delete_keys() quiet response' );
 
   $response = $bucket_obj->list
     or die $s3->err . ": " . $s3->errstr;
 
-  is( scalar @{ $response->{keys} }, 4, 'delete versioned keys' );
+  is( scalar @{ $response->{keys} }, 6, 'delete versioned keys' );
 
   shift @key_list;
   shift @key_list;
@@ -577,7 +579,7 @@ EOT
   $response = $bucket_obj->list
     or die $s3->err . ": " . $s3->errstr;
 
-  is( scalar @{ $response->{keys} }, 2, 'delete list of keys' );
+  is( scalar @{ $response->{keys} }, 4, 'delete list of keys' );
 
   shift @key_list;
   shift @key_list;

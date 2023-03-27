@@ -1,6 +1,6 @@
 SUBDIRS = .
 
-CPAN_DIST_MAKER=/usr/local/libexec/make-cpan-dist.pl
+CPAN_DIST_MAKER=@MAKE_CPAN_DIST@
 package_version=@PACKAGE_VERSION@
 package=@PACKAGE@
 scandeps=@SCANDEPS@

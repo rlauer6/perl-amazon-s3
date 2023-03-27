@@ -456,7 +456,7 @@ XML
   my $retval = $self->_send_request_expect_nothing(
     { method  => 'PUT',
       path    => "$bucket/",
-      headers => \%header_ref,
+      headers => { %header_ref, 'Content-Length' => length $data },
       data    => $data,
       region  => $region,
     }
@@ -568,10 +568,12 @@ sub list_bucket {
 
   }
 
+  $self->get_logger->debug( sprintf 'PATH: %s', $path );
+
   my $r = $self->_send_request(
     { method  => 'GET',
       path    => $path,
-      headers => {},
+      headers => {},           # { 'Content-Length' => 0 },
       region  => $self->region,
     }
   );
@@ -852,12 +854,13 @@ sub _make_request {
   $path =~ s/\A\///xsm;
   my $url = "$protocol://$host/$path";
 
-  if ( $path =~ m{\A([^/?]+)(.*)}xsm
+  if ( $path =~ m{\A([^/?]+)([^?]+)(.*)}xsm
     && $self->dns_bucket_names
     && _can_bucket_be_subdomain($1) ) {
 
     my $bucket = $1;
-    my $suffix = $2;
+    $path = $2;
+    my $query_string = $3;
 
     if ( $host =~ /([^:]+):([^:]\d+)$/xsm ) {
 
@@ -869,15 +872,18 @@ sub _make_request {
         $uri->scheme('http');
         $uri->host("$bucket.$host");
         $uri->port($port);
-        $uri->path($suffix);
-        $url = $uri;
+        $uri->path($path);
+        $url = $uri . $query_string;
+
       };
 
     }
     else {
-      $url = "$protocol://$bucket.$host$suffix";
+      $url = "$protocol://$bucket.$host$path$query_string";
     }
   }
+
+  $self->get_logger->debug( sprintf 'URL (uri): %s', $url );
 
   my $request = HTTP::Request->new( $method, $url, $http_headers );
 
@@ -901,9 +907,15 @@ sub _send_request {
 ########################################################################
   my ( $self, @args ) = @_;
 
+  $self->get_logger->trace(
+    sub {
+      return Dumper( [ 'REQUEST' => \@args ] );
+    }
+  );
+
   my $request;
 
-  if ( @args == 1 && ref $args[0] =~ /HTTP::Request/xsm ) {
+  if ( @args == 1 && ref( $args[0] ) =~ /HTTP::Request/xsm ) {
     $request = $args[0];
   }
   else {
