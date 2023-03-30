@@ -13,6 +13,7 @@ extra-files:
   - ChangeLog
   - README.md
   - README-TESTING.md
+  - src/main/perl/S3TestUtils.pm
 path:
   pm_module: src/main/perl/lib
   tests: src/main/perl/t

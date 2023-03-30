@@ -5,19 +5,25 @@
 use strict;
 use warnings;
 
+use locale; # for proper sorting
+
 use Amazon::Credentials;
 use Amazon::S3;
 use Carp;
 use Data::Dumper;
 use English qw(-no_match_vars);
 use File::HomeDir;
-use Getopt::Long qw(:config no_ignore_case);
+use Getopt::Long  qw(:config no_ignore_case);
 use Log::Log4perl qw(:easy);
 
 use Readonly;
 
 Readonly our $TRUE  => 1;
 Readonly our $FALSE => 0;
+
+Readonly our $DEFAULT_HOST => 's3.amazonaws.com';
+
+Readonly our $EMPTY => q{};
 
 ########################################################################
 sub _bucket {
@@ -26,7 +32,7 @@ sub _bucket {
 
   return $s3->bucket(
     { bucket        => $bucket_name,
-      verify_region => $TRUE
+      verify_region => $TRUE,
     }
   );
 }
@@ -114,7 +120,45 @@ sub list_bucket_keys {
 ########################################################################
   my ( $s3, %options ) = @_;
 
-  return $s3->list_bucket_all_v2( { bucket => $options{bucket} } );
+  my $prefix = $options{prefix};
+  my $response;
+
+  if ( defined $prefix ) {
+
+    $prefix =~ s/^\///xsm;
+
+    $response = $s3->list_bucket_all_v2(
+      { bucket => $options{bucket},
+        prefix => $prefix
+      }
+    );
+  }
+  else {
+    $response = $s3->list_bucket_all_v2( { bucket => $options{bucket} } );
+  }
+
+  return $response
+    if !$options{table};
+
+  my $data
+    = [ reverse sort { $a->{key} cmp $b->{key} } @{ $response->{keys} } ];
+
+  my $cols = [qw(key size last_modified etag)];
+
+  my $heading = $response->{bucket};
+
+  if ( $options{prefix} ) {
+    $heading = sprintf '%s/%s', $heading, $options{prefix};
+  }
+
+  my $table = easy_table(
+    data          => $data,
+    columns       => $cols,
+    table_options => { headingText => $heading },
+    fix_headings  => $TRUE,
+  );
+
+  return $table->drawit;
 }
 
 ########################################################################
@@ -122,7 +166,31 @@ sub show_buckets {
 ########################################################################
   my ( $s3, %options ) = @_;
 
-  return $s3->buckets();
+  my $buckets = $s3->buckets();
+
+  return
+    if !$buckets;
+
+  my $data = $buckets->{buckets};
+
+  my $table;
+
+  if ( $options{table} ) {
+
+    $table = eval {
+      use Text::ASCIITable::EasyTable;
+
+      return easy_table(
+        data          => [ sort { $a->{bucket} cmp $b->{bucket} } @{$data} ],
+        columns       => [qw( bucket region creation_date)],
+        table_options => { headingText => 'Buckets' },
+        fix_headings  => $TRUE,
+      );
+
+    };
+  }
+
+  return $table ? $table->drawit : $data;
 }
 
 ########################################################################
@@ -137,13 +205,15 @@ Options
 -d, --debug    debug output
 -h, --help     this
 -H, --host     default: s3.amazonaws.com
+-o, --output   json or keys when listing contents of a bucket, otherwise Dumper output
 -p, --profile  AWS credentials profile, default is hunt for them
 -r, --region   region, default: us-east-1
+-t, --table    output keys and bucket list as tables
 
          Commands         Args           Description
          --------         ----           -----------
 Buckets  create(-bucket)  -              create a new bucket
-         list(-bucket)    -              list the contents of a bucket
+         list(-bucket)    prefix         list the contents of a bucket (all) or just prefix
          remove(-bucket)  -              remove a bucket (must be empty)
          show-(buckets)   -                                
          
@@ -152,6 +222,7 @@ Keys     add(-key)        key filename   add an object
          delete(-key)     key            delete an object
          get(-key)        key [filename] fetch an object and optionally store to file
 
+Hint: output can be shown in ASCII tables if you have Text::ASCIITable::EasyTable installed.
 END_OF_HELP
 
   return;
@@ -161,15 +232,17 @@ END_OF_HELP
 sub main {
 ########################################################################
 
-  my %options;
+  my %options = ( output => $EMPTY );
 
   GetOptions(
-    \%options,  'bucket=s', 'debug', 'host|H=s',
-    'region=s', 'help|h',   'profile=s'
+    \%options,  'bucket=s', 'debug',     'host|H=s',
+    'region=s', 'help|h',   'profile=s', 'output=s',
+    'table',
   );
 
   if ( $options{help} ) {
     help();
+
     exit 0;
   }
 
@@ -181,17 +254,18 @@ sub main {
     }
   );
 
-  my $command = lc( shift @ARGV // q{} );
+  my $command = lc( shift @ARGV // $EMPTY );
   $command =~ s/-(.*)$//xsm;
 
   my $args = [@ARGV]; # save for debugging
 
-  $options{key} = shift @ARGV;
+  $options{key}    = shift @ARGV;
+  $options{prefix} = $options{key};
 
   $options{file} = shift @ARGV;
   $options{name} = $options{file}; # copy key
 
-  my $host = $options{host} // q{};
+  my $host = $options{host} // $DEFAULT_HOST;
   $host =~ s/^https?:\/\///xsm;
 
   my $s3 = Amazon::S3->new(
@@ -205,7 +279,8 @@ sub main {
 
   DEBUG(
     sub {
-      return sprintf "%s, %s, %s\n", $s3->err // q{}, $s3->errstr // q{},
+      return sprintf "%s, %s, %s\n", $s3->err // $EMPTY,
+        $s3->errstr // $EMPTY,
         Dumper( [ $s3->error ] );
     }
   );
@@ -249,7 +324,15 @@ sub main {
       );
     }
 
-    print Dumper( [ 'result', $result ] );
+    if ( $options{output} eq 'json' ) {
+      print JSON->new->pretty->encode($result);
+    }
+    elsif ( ref $result ) {
+      print Dumper( [$result] );
+    }
+    else {
+      print $result;
+    }
   }
 
   return;

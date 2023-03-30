@@ -1,3 +1,36 @@
+Wed Mar 29 08:12:48 2023  Rob Lauer  <rlauer6@comcast.net>
+
+	[0.61 - delete_keys(), refactoring]:
+	* s3-perl.pl
+	- added ASCII table output, refactored
+	* NEWS.md: updated
+	* src/main/perl/lib/Amazon/S3.pm.in
+	- some perlcritic refactoring
+	- pod updates
+	(list_bucket): use different markers for v1, v2
+	(list_bucket_all)
+	- throw $EVAL_ERROR "The server has stopped responding"
+	(_make_request): light refactoring
+	(_sendrequest): accept keep_root and pass to _xpc_of_content()
+	(_xpc_of_content): NoAttr => $TRUE
+	(_remember_errors): return false if no error
+	* src/main/perl/lib/Amazon/S3/Bucket.pm.in
+	- some perlcritic refactoring
+	(add_key): check reftype properly
+	(set_acl): send conten-length
+	* src/main/perl/lib/Amazon/S3/Constants.pm.in
+	- additional constants for refactoring
+	- move subs from t/01-api.t to S3TestUtils.pm
+	* src/main/perl/t/01-api.t: refactoring
+	* src/main/perl/t/02-logger.t: likewise
+	* src/main/perl/t/03-region.t: likewise
+	* src/main/perl/t/04-list-buckets.t: likewise
+	* src/main/perl/t/05-multipart-upload.t: likewise
+	* src/main/perl/t/06-list-multipart-uploads.t: likewise
+	* src/main/perl/test.localstack: converted to bash script
+	* src/main/perl/S3TestUtils.pm: new
+	* cpan/buildspec.yml: add above to distribution
+
 Mon Mar 27 10:47:54 2023  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.61 - delete_keys()]:

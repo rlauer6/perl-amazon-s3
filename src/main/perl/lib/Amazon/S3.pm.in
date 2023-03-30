@@ -4,28 +4,28 @@ use strict;
 use warnings;
 
 use Amazon::S3::Bucket;
-use Amazon::S3::Constants qw{:all};
+use Amazon::S3::Constants qw(:all);
 use Amazon::S3::Logger;
 use Amazon::S3::Signature::V4;
 
 use Carp;
 use Data::Dumper;
 use Digest::HMAC_SHA1;
-use Digest::MD5 qw{md5_hex};
-use English qw{-no_match_vars};
+use Digest::MD5 qw(md5_hex);
+use English     qw(-no_match_vars);
 use HTTP::Date;
 use URI;
 use LWP::UserAgent::Determined;
-use MIME::Base64 qw{encode_base64 decode_base64};
-use Scalar::Util qw{ reftype blessed };
-use List::Util qw{ any pairs };
-use URI::Escape qw{uri_escape_utf8};
-use XML::Simple qw{XMLin}; ## no critic (Community::DiscouragedModules)
+use MIME::Base64 qw(encode_base64 decode_base64);
+use Scalar::Util qw( reftype blessed );
+use List::Util   qw( any pairs );
+use URI::Escape  qw(uri_escape_utf8);
+use XML::Simple  qw(XMLin);                      ## no critic (Community::DiscouragedModules)
 
-use parent qw{Class::Accessor::Fast};
+use parent qw(Class::Accessor::Fast);
 
 __PACKAGE__->mk_accessors(
-  qw{
+  qw(
     aws_access_key_id
     aws_secret_access_key
     token
@@ -48,10 +48,10 @@ __PACKAGE__->mk_accessors(
     _signer
     timeout
     ua
-  }
+  ),
 );
 
-our $VERSION = '@PACKAGE_VERSION@'; ## no critic (ValuesAndExpressions::RequireInterpolationOfMetachars)
+our $VERSION = '@PACKAGE_VERSION@'; ## no critic (RequireInterpolation)
 
 ########################################################################
 sub new {
@@ -100,8 +100,8 @@ sub new {
         $safe_options{aws_access_key_id}     = '****';
       }
 
-      return Dumper( [ 'options: ', \%safe_options ] );
-    }
+      return Dumper( [ options => \%safe_options ] );
+    },
   );
 
   if ( !$self->credentials ) {
@@ -126,7 +126,7 @@ sub new {
       requests_redirectable => [qw(GET HEAD DELETE)],
     );
 
-    $ua->timing( join $COMMA, map { 2**$_ } 0 .. 5 );
+    $ua->timing( join $COMMA, map { 2**$_ } 0 .. $MAX_RETRIES );
   }
   else {
     $ua = LWP::UserAgent->new(
@@ -139,7 +139,7 @@ sub new {
   $ua->env_proxy;
   $self->ua($ua);
 
-  $self->region( $self->_region // 'us-east-1' );
+  $self->region( $self->_region // $DEFAULT_REGION );
 
   if ( !$self->_signer && $self->cache_signer ) {
     $self->_signer( $self->signer );
@@ -162,21 +162,19 @@ sub new {
     return $text if !$text;
 
     if ( !defined $encryption_key ) {
-      eval {
-        require Crypt::Blowfish;
-        require Crypt::CBC;
-      };
+      $encryption_key = eval {
+        if ( !defined $encryption_key ) {
+          require Crypt::Blowfish;
+          require Crypt::CBC;
 
-      if ($EVAL_ERROR) {
-        $encryption_key = $EMPTY;
-      }
-      else {
-        $encryption_key = md5_hex( rand $PID );
-      }
+          return md5_hex( rand $PID );
+        }
+      };
     }
 
-    return $text
-      if !$encryption_key;
+    if ( !$encryption_key || $EVAL_ERROR ) {
+      return $text;
+    }
 
     my $cipher = Crypt::CBC->new(
       -pass        => $encryption_key,
@@ -198,7 +196,7 @@ sub new {
 
     my $cipher = Crypt::CBC->new(
       -pass   => $encryption_key,
-      -cipher => 'Crypt::Blowfish'
+      -cipher => 'Crypt::Blowfish',
     );
 
     return $cipher->decrypt($secret);
@@ -217,7 +215,7 @@ sub get_bucket_location {
     $bucket = Amazon::S3::Bucket->new( bucket => $bucket, account => $self );
   }
 
-  return $bucket->get_location_constraint // 'us-east-1';
+  return $bucket->get_location_constraint // $DEFAULT_REGION;
 }
 
 ########################################################################
@@ -226,6 +224,7 @@ sub get_default_region {
   my ($self) = @_;
 
   my $region = $ENV{AWS_REGION} || $ENV{AWS_DEFAULT_REGION};
+
   return $region
     if $region;
 
@@ -245,7 +244,7 @@ sub get_default_region {
     }
   }
 
-  return $region || 'us-east-1';
+  return $region || $DEFAULT_REGION;
 }
 
 # Amazon::Credentials compatibility methods
@@ -286,7 +285,7 @@ sub turn_on_special_retry {
     # /Backups<path>?partNumber=27&uploadId=<id> - HTTP/1.1" 400
     # RequestTimeout 360 20971520 20478 - "-" "libwww-perl/6.15"
     my $http_codes_hr = $self->ua->codes_to_determinate();
-    $http_codes_hr->{400} = 1;
+    $http_codes_hr->{$HTTP_BAD_REQUEST} = $TRUE;
   }
 
   return;
@@ -305,7 +304,7 @@ sub turn_off_special_retry {
     # /Backups<path>?partNumber=27&uploadId=<id> - HTTP/1.1" 400
     # RequestTimeout 360 20971520 20478 - "-" "libwww-perl/6.15"
     my $http_codes_hr = $self->ua->codes_to_determinate();
-    delete $http_codes_hr->{400};
+    delete $http_codes_hr->{$HTTP_BAD_REQUEST};
   }
 
   return;
@@ -348,14 +347,14 @@ sub buckets {
   my $region = $self->_region;
   my $bucket_list;
 
-  $self->reset_signer_region('us-east-1'); # default region for buckets op
+  $self->reset_signer_region($DEFAULT_REGION); # default region for buckets op
 
   my $r = $self->_send_request(
     { method  => 'GET',
       path    => $EMPTY,
       headers => {},
-      region  => 'us-east-1',
-    }
+      region  => $DEFAULT_REGION,
+    },
   );
 
   return $bucket_list
@@ -381,7 +380,7 @@ sub buckets {
           account       => $self,
           buffer_size   => $self->buffer_size,
           verify_region => $verify_region // $FALSE,
-        }
+        },
         );
 
     }
@@ -407,7 +406,7 @@ sub reset_signer_region {
   # is probably not needed anymore since bucket operations now send
   # the region of the bucket to the signer
   if ( $self->cache_signer ) {
-    if ( $self->region && $self->region ne 'us-east-1' ) {
+    if ( $self->region && $self->region ne $DEFAULT_REGION ) {
       if ( $self->signer->can('region') ) {
         $self->signer->region($region);
       }
@@ -428,7 +427,7 @@ sub add_bucket {
   my $region = $conf->{location_constraint} // $conf->{region}
     // $self->region;
 
-  if ( $region && $region eq 'us-east-1' ) {
+  if ( $region && $region eq $DEFAULT_REGION ) {
     undef $region;
   }
 
@@ -459,7 +458,7 @@ XML
       headers => { %header_ref, 'Content-Length' => length $data },
       data    => $data,
       region  => $region,
-    }
+    },
   );
 
   my $bucket_obj = $retval ? $self->bucket($bucket) : undef;
@@ -476,7 +475,7 @@ sub bucket {
 
   if ( ref $args[0] && reftype( $args[0] ) eq 'HASH' ) {
     ( $bucketname, $region, $verify_region )
-      = @{ $args[0] }{qw{bucket region verify_region}};
+      = @{ $args[0] }{qw(bucket region verify_region)};
   }
   else {
     ( $bucketname, $region ) = @args;
@@ -493,7 +492,7 @@ sub bucket {
       account       => $self,
       region        => $region,
       verify_region => $verify_region,
-    }
+    },
   );
 }
 
@@ -522,7 +521,7 @@ sub delete_bucket {
       path    => $bucket . $SLASH,
       headers => {},
       region  => $region,
-    }
+    },
   );
 }
 
@@ -550,7 +549,17 @@ sub list_bucket {
   my $bucket_list; # return this
   my $path = $bucket . $SLASH;
 
+  my $list_type = $conf->{'list-type'} // '1';
+
+  my ( $marker, $next_marker, $query_next )
+    = @{ $LIST_OBJECT_MARKERS{$list_type} };
+
+  if ( $conf->{marker} ) {
+    $conf->{$query_next} = delete $conf->{marker};
+  }
+
   if ( %{$conf} ) {
+
     my @vars = keys %{$conf};
 
     # remove undefined elements
@@ -575,20 +584,22 @@ sub list_bucket {
       path    => $path,
       headers => {},           # { 'Content-Length' => 0 },
       region  => $self->region,
-    }
+    },
   );
 
   return $bucket_list
     if $self->_remember_errors($r);
 
-  $self->get_logger->debug( sub { return Dumper($r); } );
-
-  my ( $marker, $next_marker ) = qw{ Marker NextMarker };
-
-  if ( $conf->{'list-type'} && $conf->{'list-type'} eq '2' ) {
-    $marker      = 'ContinuationToken';
-    $next_marker = 'NextContinuationToken';
-  }
+  $self->get_logger->debug(
+    sub {
+      return Dumper(
+        [ marker      => $marker,
+          next_marker => $next_marker,
+          response    => $r,
+        ],
+      );
+    },
+  );
 
   $bucket_list = {
     bucket       => $r->{Name},
@@ -623,6 +634,7 @@ sub list_bucket {
       owner_displayname => $node->{Owner}{DisplayName},
       };
   }
+
   $bucket_list->{keys} = \@keys;
 
   if ( $conf->{delimiter} ) {
@@ -646,6 +658,7 @@ sub list_bucket {
         push @common_prefixes, $prefix;
       }
     }
+
     $bucket_list->{common_prefixes} = \@common_prefixes;
   }
 
@@ -675,7 +688,8 @@ sub list_bucket_all {
     if !$bucket;
 
   my $response = $self->list_bucket($conf);
-  croak 'The server has stopped responding'
+
+  croak $EVAL_ERROR
     if !$response;
 
   return $response
@@ -691,7 +705,8 @@ sub list_bucket_all {
     $conf->{bucket} = $bucket;
 
     $response = $self->list_bucket($conf);
-    croak 'The server has stopped responding'
+
+    croak $EVAL_ERROR
       if !$response;
 
     push @{ $all->{keys} }, @{ $response->{keys} };
@@ -767,7 +782,7 @@ sub signer {
       region        => $self->region || $self->get_default_region,
       service       => 's3',
       $self->get_token ? ( security_token => $creds->get_token ) : (),
-    }
+    },
   );
 
   if ( $self->cache_signer ) {
@@ -824,7 +839,7 @@ sub _make_request {
 
   if ( ref $args[0] && reftype( $args[0] ) eq 'HASH' ) {
     ( $method, $path, $headers, $data, $metadata, $region )
-      = @{ $args[0] }{qw{method path headers data metadata region}};
+      = @{ $args[0] }{qw(method path headers data metadata region)};
   }
   else {
     ( $method, $path, $headers, $data, $metadata, $region ) = @args;
@@ -864,19 +879,22 @@ sub _make_request {
 
     if ( $host =~ /([^:]+):([^:]\d+)$/xsm ) {
 
-      eval {
+      $url = eval {
         my $port = $2;
         $host = $1;
 
-        my $uri = URI->new("http://$bucket.host");
+        my $uri = URI->new;
+
         $uri->scheme('http');
         $uri->host("$bucket.$host");
         $uri->port($port);
         $uri->path($path);
-        $url = $uri . $query_string;
 
+        return $uri . $query_string;
       };
 
+      die "could not a uri for bucket: $bucket, host: $host, path: $path\n"
+        if !$url || $EVAL_ERROR;
     }
     else {
       $url = "$protocol://$bucket.$host$path$query_string";
@@ -910,15 +928,20 @@ sub _send_request {
   $self->get_logger->trace(
     sub {
       return Dumper( [ 'REQUEST' => \@args ] );
-    }
+    },
   );
 
   my $request;
+  my $keep_root = $FALSE;
 
   if ( @args == 1 && ref( $args[0] ) =~ /HTTP::Request/xsm ) {
     $request = $args[0];
   }
   else {
+    if ( ref $args[0] ) {
+      $keep_root = delete $args[0]->{keep_root};
+    }
+
     $request = $self->_make_request(@args);
   }
 
@@ -935,7 +958,7 @@ sub _send_request {
     $content = undef;
   }
   elsif ( $content && $response->content_type eq 'application/xml' ) {
-    $content = $self->_xpc_of_content($content);
+    $content = $self->_xpc_of_content( $content, $keep_root );
   }
 
   return $content;
@@ -1109,6 +1132,7 @@ sub _send_request_expect_nothing {
   my $request = $self->_make_request(@args);
 
   my $response = $self->_do_http($request);
+
   $self->get_logger->debug( Dumper( [$response] ) );
 
   my $content = $response->content;
@@ -1130,7 +1154,7 @@ sub _send_request_expect_nothing {
 # first time we used it. Thus, we need to probe first to find out what's going on,
 # before we start sending any actual data.
 ########################################################################
-sub _send_request_expect_nothing_probed {
+sub _send_request_expect_nothing_probed { ## no critic (ProhibitUnusedPrivateSubroutines)
 ########################################################################
   my ( $self, @args ) = @_;
 
@@ -1138,11 +1162,11 @@ sub _send_request_expect_nothing_probed {
 
   if ( @args == 1 && ref $args[0] ) {
     ( $method, $path, $conf, $value, $region )
-      = @{ $args[0] }{qw{method path headers data region}};
+      = @{ $args[0] }{qw(method path headers data region)};
   }
   else {
     ( $method, $path, $conf, $value, $region )
-      = @{ $args[0] }{qw{method path headers data region}};
+      = @{ $args[0] }{qw(method path headers data region)};
   }
 
   $region = $region // $self->region;
@@ -1150,8 +1174,8 @@ sub _send_request_expect_nothing_probed {
   my $request = $self->_make_request(
     { method => 'HEAD',
       path   => $path,
-      region => $region
-    }
+      region => $region,
+    },
   );
 
   my $override_uri = undef;
@@ -1177,8 +1201,8 @@ sub _send_request_expect_nothing_probed {
       path    => $path,
       headers => $conf,
       data    => $value,
-      region  => $region
-    }
+      region  => $region,
+    },
   );
 
   if ( defined $override_uri ) {
@@ -1222,18 +1246,17 @@ sub _xpc_of_content {
 ########################################################################
   my ( $self, $src, $keep_root ) = @_;
 
-  my $xml_hr;
-
-  eval {
-    $xml_hr = XMLin(
+  my $xml_hr = eval {
+    XMLin(
       $src,
-      'SuppressEmpty' => $EMPTY,
-      'ForceArray'    => ['Contents'],
-      'KeepRoot'      => $keep_root
+      SuppressEmpty => $EMPTY,
+      ForceArray    => ['Contents'],
+      KeepRoot      => $keep_root,
+      NoAttr        => $TRUE,
     );
   };
 
-  if ($EVAL_ERROR) {
+  if ( !$xml_hr && $EVAL_ERROR ) {
     confess "Error parsing $src:  $EVAL_ERROR";
   }
 
@@ -1246,7 +1269,8 @@ sub _remember_errors {
 ########################################################################
   my ( $self, $src, $keep_root ) = @_;
 
-  return $TRUE if !$src; # this should not happen
+  return $src
+    if !$src;
 
   if ( !ref $src && $src !~ /^[[:space:]]*</xsm ) { # if not xml
     ( my $code = $src ) =~ s/^[[:space:]]*[(][\d]*[)].*$/$1/xsm;
@@ -1280,7 +1304,7 @@ sub _remember_errors {
 # Deprecated - this adds a header for the old V2 auth signatures
 #
 ########################################################################
-sub _add_auth_header {
+sub _add_auth_header { ## no critic (ProhibitUnusedPrivateSubroutines)
 ########################################################################
   my ( $self, $headers, $method, $path ) = @_;
 
@@ -1390,7 +1414,7 @@ sub _canonical_string {
   $buf .= "/$1";
 
   # ...unless there any parameters we're interested in...
-  if ( $path =~ /[&?](acl|torrent|location|uploads|delete)($|=|&)/xsm ) {
+  if ( $path =~ /[&?](acl|torrent|location|uploads|delete)([=&]|$)/xsm ) {
     #  if ( $path =~ /[&?](acl|torrent|location|uploads|delete)([=&])?/xsm ) {
     $buf .= "?$1";
   }
@@ -1445,7 +1469,7 @@ sub _urlencode {
 ########################################################################
   my ( $self, $unencoded ) = @_;
 
-  return uri_escape_utf8( $unencoded, '^A-Za-z0-9\-\._~\x2f' );
+  return uri_escape_utf8( $unencoded, '^A-Za-z0-9\-\._~\x2f' ); ## no critic (RequireInterpolation)
 }
 
 1;
@@ -1467,13 +1491,7 @@ managing Amazon S3 buckets and keys.
 
 =head1 SYNOPSIS
 
-  #!/usr/bin/perl
-  use warnings;
-  use strict;
-
   use Amazon::S3;
-  
-  use vars qw/$OWNER_ID $OWNER_DISPLAYNAME/;
   
   my $aws_access_key_id     = "Fill me in!";
   my $aws_secret_access_key = "Fill me in too!";
@@ -1489,12 +1507,15 @@ managing Amazon S3 buckets and keys.
   
   # create a bucket
   my $bucket_name = $aws_access_key_id . '-net-amazon-s3-test';
+
   my $bucket = $s3->add_bucket( { bucket => $bucket_name } )
       or die $s3->err . ": " . $s3->errstr;
   
   # store a key with a content-type and some optional metadata
   my $keyname = 'testing.txt';
+
   my $value   = 'T';
+
   $bucket->add_key(
       $keyname, $value,
       {   content_type        => 'text/plain',
@@ -1511,35 +1532,69 @@ managing Amazon S3 buckets and keys.
   # list keys in the bucket
   $response = $bucket->list
       or die $s3->err . ": " . $s3->errstr;
+
   print $response->{bucket}."\n";
+
   for my $key (@{ $response->{keys} }) {
         print "\t".$key->{key}."\n";  
   }
 
   # delete key from bucket
   $bucket->delete_key($keyname);
+
+  # delete multiple keys from bucket
+  $bucket->delete_keys([$key1, $key2, $key3]);
   
   # delete bucket
   $bucket->delete_bucket;
 
 =head1 DESCRIPTION
 
+This documentation refers to version @PACKAGE_VERSION@.
+
 C<Amazon::S3> provides a portable client interface to Amazon Simple
 Storage System (S3).
 
-I<This module is rather dated. For a much more robust and modern
-implementation of an S3 interface try C<Net::Amazon::S3>.
-C<Amazon::S3> ostensibly was intended to be a drop-in replacement for
-C<Net:Amazon::S3> that "traded some performance in return for
-portability". That statement is no longer accurate as
-C<Net::Amazon::S3> implements much more of the S3 API and may have
-changed the interface in ways that might break your
-applications. However, C<Net::Amazon::S3> is today dependent on
+This module is rather dated, however with some help from a few
+contributors it has had some recent updates. Recent changes include
+implementations of:
+
+=over 5
+
+=item ListObjectsV2
+
+=item CopyObject
+
+=item DeleteObjects
+
+=back
+
+Additionally, this module now implements Signature Version 4 signing,
+unit tests have been updated and more documentation has been added or
+corrected. Credentials are encrypted if you have encryption modules installed.
+
+=head2 Comparison to Other Perl S3 Modules
+
+Other implementations for accessing Amazon's S3 service include
+C<Net::Amazon::S3> and the C<Paws> project. C<Amazon::S3> ostensibly
+was intended to be a drop-in replacement for C<Net:Amazon::S3> that
+"traded some performance in return for portability". That statement is
+no longer accurate as C<Amazon::S3> may have changed the interface in
+ways that might break your applications if you are relying on
+compatibility with C<Net::Amazon::S3>.
+
+However, C<Net::Amazon::S3> and C<Paws::S3> today, are dependent on
 C<Moose> which may in fact level the playing field in terms of
 performance penalties that may have been introduced by recent updates
-to C<Amazon::S3>. YMMV, however, this module may still appeal to some
-that favor simplicity of the interface and a lower number of
-dependencies. Below is the original description of the module.>
+to C<Amazon::S3>. Changes to C<Amazon::S3> include the use of more
+Perl modules in lieu of raw Perl code to increase maintainability and
+stability as well as some refactoring. C<Amazon::S3> also strives now
+to adhere to best practices as much as possible.
+
+C<Paws::S3> is a much more robust implementation of
+a Perl S3 interface, however this module may still appeal to
+those that favor simplicity of the interface and a lower number of
+dependencies. Below is the original description of the module.
 
 =over 10
 
@@ -1578,15 +1633,14 @@ via L<XML::Simple>.
 =head1 LIMITATIONS AND DIFFERENCES WITH EARLIER VERSIONS
 
 As noted, this module is no longer a I<drop-in> replacement for
-C<Net::Amazon::S3> and has limitations and differences that may make
-the use of this module in your applications
-questionable. Additionally, one of the original intents of this fork
-of C<Net::Amazon::S3> was to reduce the dependencies and make it
-I<easy to install>. Recent changes to this module have introduced new
-dependencies in order to improve the maintainability and provide
-additional features. Installing CPAN modules is never easy, especially
-when the dependencies of the dependencies are impossible to control
-and include XS modules.
+C<Net::Amazon::S3> and has limitations and differences that may impact
+the use of this module in your applications. Additionally, one of the
+original intents of this fork of C<Net::Amazon::S3> was to reduce the
+number of dependencies and make it I<easy to install>. Recent changes
+to this module have introduced new dependencies in order to improve
+the maintainability and provide additional features. Installing CPAN
+modules is never easy, especially when the dependencies of the
+dependencies are impossible to control and include XS modules.
 
 =over 5
 
@@ -1613,7 +1667,7 @@ In this order install:
 
  HTML::HeadParser 2.14
  LWP 6.13
- Amazon::S3 0.55
+ Amazon::S3
 
 ...other versions I<may> work...YMMV.
 
@@ -1640,7 +1694,7 @@ Unlike Signature Version 2, Version 4 requires a regional
 parameter. This implies that you need to supply the bucket's region
 when signing requests for any API call that involves a specific
 bucket. Starting with version 0.55 of this module,
-C<Amazon::S3::Bucket> provides a new method (C<region()> and accepts
+C<Amazon::S3::Bucket> provides a new method (C<region()>) and accepts
 in the constructor a C<region> parameter.  If a region is not
 supplied, the region for the bucket will be set to the region set in
 the C<account> object (C<Amazon::S3>) that you passed to the bucket's
@@ -1665,7 +1719,7 @@ for S3 added after the initial creation of this interface.
 
 =item Multipart Upload Support
 
-There is limited testing for multipart uploads.
+There is some limited testing for multipart uploads.
 
 For more information regarding multi-part uploads visit the link below.
 
@@ -1814,7 +1868,7 @@ someone dumps the class.>
 
 Unfortunately, while this will prevent L<Net::Amazon::Signature::V4>
 from hanging on to your credentials, you credentials will be stored in
-the L<Amazon::S3> object.
+the C<Amazon::S3> object.
 
 Starting with version 0.55 of this module, if you have installed
 L<Crypt::CBC> and L<Crypt::Blowfish>, your credentials will be
@@ -1832,7 +1886,7 @@ I<blast radius> of any potential security breach.
 
 =item 5. Do nothing...send the credentials, use the default signer.
 
-In this case, both the L<Amazon::S3> class and the
+In this case, both the C<Amazon::S3> class and the
 L<Net::Amazon::Signature::V4> have your credentials. Caveat Emptor.
 
 See Also L<Amazon::Credentials> for more information about safely
@@ -2231,7 +2285,7 @@ DNS bucket names during testing.
 
 Your AWS access key
 
-=item AWS_ACCESS_KEY_SECRET
+=item AWS_SECRET_ACCESS_KEY
 
 Your AWS sekkr1t passkey. Be forewarned that setting this environment variable
 on a shared system might leak that information to another user. Be careful.
@@ -2240,6 +2294,11 @@ on a shared system might leak that information to another user. Be careful.
 
 Doesn't matter what you set it to. Just has to be set if you want
 to skip ACLs tests.
+
+=item AMAZON_S3_SKIP_PERMISSIONS
+
+Skip tests that check for enforcement of ACLs...as of this version,
+LocalStack for example does not support enforcement of ACLs.
 
 =item AMAZON_S3_SKIP_REGION_CONSTRAINT_TEST
 
@@ -2265,6 +2324,26 @@ only test creating a bucket in the local region.
 
 I<Consider using an S3 mocking service like C<minio> or C<LocalStack>
 if you want to create real tests for your applications or this module.>
+
+Here's bash script for testing using LocalStack
+
+ #!/bin/bash
+ # -*- mode: sh; -*-
+ 
+ BUCKET=net-amazon-s3-test-test 
+ ENDPOINT_URL=s3.localhost.localstack.cloud:4566
+ 
+ AMAZON_S3_EXPENSIVE_TESTS=1 \
+ AMAZON_S3_HOST=$ENDPOINT_URL \
+ AMAZON_S3_LOCALSTACK=1 \
+ AWS_ACCESS_KEY_ID=test \
+ AWS_ACCESS_SECRET_KEY=test  \
+ AMAZON_S3_DOMAIN_BUCKET_NAMES=1 make test 2>&1 | tee test.log
+
+To run the tests...clone the project and build the software.
+
+ cd src/main/perl
+ ./test.localstack
 
 =head1 ADDITIONAL INFORMATION
 
@@ -2358,3 +2437,5 @@ terms of the Artistic License are described at
 http://www.perl.com/language/misc/Artistic.html. Except
 where otherwise noted, C<Amazon::S3> is Copyright 2008, Timothy
 Appnel, tima@cpan.org. All rights reserved.
+
+=cut

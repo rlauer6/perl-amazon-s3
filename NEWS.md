@@ -7,9 +7,11 @@ previous versions.  If critical bugs are found in any of the software,
 notice of such bugs and the versions in which they were fixed will be
 noted here, as well.
 
-# perl-Amazon-S3 0.61 (2023-03-27)
+# perl-Amazon-S3 0.61 (2023-03-30)
 
-> This version adds a new method for bulk deletion of keys.
+> This version adds a new method for bulk deletion of keys. Some
+> refactoring of the code has been done and unit tests have been
+> cleaned up.
 
 ## Enhancements
 
