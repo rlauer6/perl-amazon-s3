@@ -66,7 +66,7 @@ managing Amazon S3 buckets and keys.
 
 # DESCRIPTION
 
-This documentation refers to version 0.61.
+This documentation refers to version 0.62.
 
 `Amazon::S3` provides a portable client interface to Amazon Simple
 Storage System (S3).
@@ -101,7 +101,7 @@ Perl modules in lieu of raw Perl code to increase maintainability and
 stability as well as some refactoring. `Amazon::S3` also strives now
 to adhere to best practices as much as possible.
 
-`Paws::S3` is a much more robust implementation of
+`Paws::S3` may be a much more robust implementation of
 a Perl S3 interface, however this module may still appeal to
 those that favor simplicity of the interface and a lower number of
 dependencies. Below is the original description of the module.
@@ -152,9 +152,9 @@ dependencies are impossible to control and include XS modules.
 
     Technically, this module should run on versions 5.10 and above,
     however some of the dependencies may require higher versions of
-    `perl` or some versions of the dependencies that conflict with
-    other versions of dependencies...it's a crapshoot when dealing with
-    older `perl` versions and CPAN modules.
+    `perl` or some lower versions of the dependencies due to conflicts
+    with other versions of dependencies...it's a crapshoot when dealing
+    with older `perl` versions and CPAN modules.
 
     You may however, be able to build this module by installing older
     versions of those dependencies and take your chances that those older
@@ -184,7 +184,7 @@ dependencies are impossible to control and include XS modules.
 
     **New regions after January 30, 2014 will only support Signature Version 4.**
 
-    See ["Signature Version V4"](#signature-version-v4) below for important details.>
+    See ["Signature Version V4"](#signature-version-v4) below for important details.
 
     - Signature Version 4
 
@@ -219,9 +219,11 @@ dependencies are impossible to control and include XS modules.
 
 - Multipart Upload Support
 
-    There is some limited testing for multipart uploads.
+    There are some recently added unit tests for multipart uploads that
+    seem to indicate this feature is working as expected.  Please report
+    any deviation from expected results if you are using those methods.
 
-    For more information regarding multi-part uploads visit the link below.
+    For more information regarding multipart uploads visit the link below.
 
     [https://docs.aws.amazon.com/AmazonS3/latest/API/API\_CreateMultipartUpload.html](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html)
 
@@ -308,8 +310,8 @@ Create a new S3 client object. Takes some arguments:
     default: s3.amazonaws.com
 
     Note that requests are made to domain buckets when possible.  You can
-    prevent that behavior if either the bucket name does conform to DNS
-    bucket naming conventions or you preface the bucket name with '/'.
+    prevent that behavior if either the bucket name does not conform to
+    DNS bucket naming conventions or you preface the bucket name with '/'.
 
     If you set a region then the host name will be modified accordingly if
     it is an Amazon endpoint.
@@ -381,12 +383,12 @@ false value.
     In this case, both the `Amazon::S3` class and the
     [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4) have your credentials. Caveat Emptor.
 
-    See Also [Amazon::Credentials](https://metacpan.org/pod/Amazon%3A%3ACredentials) for more information about safely
+    See also [Amazon::Credentials](https://metacpan.org/pod/Amazon%3A%3ACredentials) for more information about safely
     storing your credentials and preventing exfiltration.
 
 ## region
 
-Sets the region for the for the API calls. This will also be the
+Sets the region for the  API calls. This will also be the
 default when instantiating the bucket object unless you pass the
 region parameter in the `bucket` method or use the `verify_region`
 flag that will _always_ verify the region of the bucket using the
@@ -417,9 +419,8 @@ default: us-east-1
 
     default: false
 
-Returns a HASHREF containing the metadata for all of the buckets
-owned by the accout or (see below) or `undef` on
-error.
+Returns a reference to a hash containing the metadata for all of the
+buckets owned by the accout or (see below) or `undef` on error.
 
 - owner\_id
 
@@ -431,8 +432,8 @@ error.
 
 - buckets
 
-    Any ARRAYREF of [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) objects for the 
-    account.
+    An array of [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) objects for the account. Returns
+    `undef` if there are not buckets or an error occurs.
 
 ## add\_bucket
 
@@ -478,7 +479,8 @@ method.
 
 ## delete\_bucket
 
-Takes either a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object or a HASHREF containing:
+Takes either a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object or a reference to a hash
+containing:
 
 - bucket
 
@@ -489,7 +491,7 @@ Takes either a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3
     Region the bucket is located in. If not provided, the method will
     determine the bucket's region by calling `get_bucket_location`.
 
-Returns a boolean indicating the success of failure of the API
+Returns a boolean indicating the success or failure of the API
 call. Check `err` or `errstr` for error messages.
 
 Note from the [Amazon's documentation](https://docs.aws.amazon.com/AmazonS3/latest/userguide/BucketRestrictions.html)
@@ -515,11 +517,11 @@ default: true
 
 List all keys in this bucket.
 
-Takes a HASHREF of arguments:
+Takes a reference to a hash of arguments:
 
-- bucket
+- bucket (required)
 
-    REQUIRED. The name of the bucket you want to list keys on.
+    The name of the bucket you want to list keys on.
 
 - prefix
 
@@ -577,25 +579,23 @@ Takes a HASHREF of arguments:
 
     If `marker` is omitted,the first page of results is returned. 
 
-Returns `undef` on error and a HASHREF of data on success:
+Returns `undef` on error and a reference to a hash of data on success:
 
-The HASHREF looks like this:
+The return value looks like this:
 
     {
-          bucket       => $bucket_name,
-          prefix       => $bucket_prefix, 
-          marker       => $bucket_marker, 
-          next_marker  => $bucket_next_available_marker,
-          max_keys     => $bucket_max_keys,
-          is_truncated => $bucket_is_truncated_boolean
-          keys          => [$key1,$key2,...]
-     }
-
-Explanation of bits of that:
+     bucket       => $bucket_name,
+     prefix       => $bucket_prefix, 
+     marker       => $bucket_marker, 
+     next_marker  => $bucket_next_available_marker,
+     max_keys     => $bucket_max_keys,
+     is_truncated => $bucket_is_truncated_boolean
+     keys          => [$key1,$key2,...]
+    }
 
 - is\_truncated
 
-    B flag that indicates whether or not all results of your query were
+    Boolean flag that indicates whether or not all results of your query were
     returned in this response. If your results were truncated, you can
     make a follow-up paginated request using the Marker parameter to
     retrieve the rest of the results.
@@ -610,16 +610,16 @@ Explanation of bits of that:
     is only present in the response if the `delimiter` parameter was
     sent with the request.
 
-Each key is a HASHREF that looks like this:
+Each key is a reference to a hash that looks like this:
 
-     {
-        key           => $key,
-        last_modified => $last_mod_date,
-        etag          => $etag, # An MD5 sum of the stored content.
-        size          => $size, # Bytes
-        storage_class => $storage_class # Doc?
-        owner_id      => $owner_id,
-        owner_displayname => $owner_name
+    {
+      key           => $key,
+      last_modified => $last_mod_date,
+      etag          => $etag, # An MD5 sum of the stored content.
+      size          => $size, # Bytes
+      storage_class => $storage_class # Doc?
+      owner_id      => $owner_id,
+      owner_displayname => $owner_name
     }
 
 ## get\_bucket\_location
@@ -628,7 +628,7 @@ Each key is a HASHREF that looks like this:
     get_bucket_locaiton(bucket-obj)
 
 This is a convenience routines for the `get_location_constraint()` of
-the bucket object.  This method will, however return the default
+the bucket object.  This method will return the default
 region of 'us-east-1' when `get_location_constraint()` returns a null
 value.
 
@@ -645,7 +645,7 @@ method of the bucket object.
 ## get\_logger
 
 Returns the logger object. If you did not set a logger when you
-created the object then the an instance of `Amazon::S3::Logger` is
+created the object then an instance of `Amazon::S3::Logger` is
 returned. You can log to STDERR using this logger. For example:
 
     $s3->get_logger->debug('this is a debug message');
@@ -658,7 +658,7 @@ List all keys in this bucket without having to worry about
 'marker'. This is a convenience method, but may make multiple requests
 to S3 under the hood.
 
-Takes the same arguments as list\_bucket.
+Takes the same arguments as `list_bucket`.
 
 _You are encouraged to use the newer `list_bucket_all_v2` method._
 
@@ -843,12 +843,13 @@ additional information logged at lower levels.
 - [Amazon S3 REST API](https://docs.aws.amazon.com/AmazonS3/latest/API/Welcome.html)
 - [Authenticating Requests (AWS Signature Version 4)](https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html)
 - [Authenticating Requests (AWS Signature Version 2)](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html)
+- [LocalStack](https://localstack.io)
 
 # SUPPORT
 
 Bugs should be reported via the CPAN bug tracker at
 
-&lt;http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Amazon-S3>
+[http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Amazon-S3](http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Amazon-S3)
 
 For other issues, contact the author.
 

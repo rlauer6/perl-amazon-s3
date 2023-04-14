@@ -134,8 +134,11 @@ for my $location (@REGIONS) {
   # fetch contents of the bucket
   # note prefix, marker, max_keys options can be passed in
 
-  my $response = $bucket_obj->list
-    or BAIL_OUT( $s3->err . ': ' . $s3->errstr );
+  my $response = $bucket_obj->list();
+
+  if ( !$response ) {
+    BAIL_OUT( sprintf 'could not list bucket: %s', $bucket_name );
+  }
 
   SKIP: {
     if ( !$response ) {

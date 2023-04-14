@@ -1406,33 +1406,6 @@ HASH will contain the following members:
 
 =back
 
-=head2 get_key $key_name, [$method]
-
-Takes a key and an optional HTTP method and fetches it from
-S3. The default HTTP method is GET.
-
-The method returns C<undef> if the key does not exist in the
-bucket and throws an exception (dies) on server errors.
-
-On success, the method returns a HASHREF containing:
-
-=over
-
-=item content_type
-
-=item etag
-
-=item value
-
-=item @meta
-
-=back
-
-=head2 get_key_filename $key_name, $method, $filename
-
-This method works like C<get_key>, but takes an added
-filename that the S3 resource will be written to.
-
 =head2 delete_key $key_name
 
 Permanently removes C<$key_name> from the bucket. Returns a
@@ -1508,6 +1481,34 @@ Permanently removes the bucket from the server. A bucket
 cannot be removed if it contains any keys (contents).
 
 This is an alias for C<$s3-E<gt>delete_bucket($bucket)>.
+
+=head2 get_key $key_name, [$method]
+
+Takes a key and an optional HTTP method and fetches it from
+S3. The default HTTP method is GET.
+
+The method returns C<undef> if the key does not exist in the
+bucket and throws an exception (dies) on server errors.
+
+On success, the method returns a HASHREF containing:
+
+=over
+
+=item content_type
+
+=item etag
+
+=item value
+
+=item @meta
+
+=back
+
+=head2 get_key_filename $key_name, $method, $filename
+
+This method works like C<get_key>, but takes an added
+filename that the S3 resource will be written to.
+
 
 =head2 list
 

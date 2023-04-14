@@ -7,6 +7,21 @@ previous versions.  If critical bugs are found in any of the software,
 notice of such bugs and the versions in which they were fixed will be
 noted here, as well.
 
+# perl-Amazon-S3 0.62 (2023-04-13)
+
+> This version adds fixes a bug in `list_bucket` and `buckets` methods
+> that did not return `undef` as documented for non-existent buckets.
+
+## Enhancements
+
+* None
+
+## Fixes
+
+* return `undef` for `list_bucket` and `buckets` when bucket(s) do not
+  exist
+* added unit test for listing non-existent bucket
+
 # perl-Amazon-S3 0.61 (2023-03-30)
 
 > This version adds a new method for bulk deletion of keys. Some

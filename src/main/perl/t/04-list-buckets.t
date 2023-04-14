@@ -20,7 +20,7 @@ if ( !$ENV{'AMAZON_S3_EXPENSIVE_TESTS'} ) {
   plan skip_all => 'Testing this module for real costs money.';
 }
 else {
-  plan tests => 9;
+  plan tests => 11;
 }
 
 ########################################################################
@@ -41,6 +41,22 @@ ok( ref $bucket_obj, 'created bucket - ' . $bucket_name );
 if ( $EVAL_ERROR || !$bucket_obj ) {
   BAIL_OUT( $s3->err . ": " . $s3->errstr );
 }
+
+my $bad_bucket = $s3->bucket( { bucket => 'does-not-exists' } );
+
+my $response = $bad_bucket->list( { bucket => $bad_bucket } );
+
+ok( !defined $response, 'undef returned on non-existent bucket' );
+
+like( $bad_bucket->errstr, qr/does\snot\sexist/xsm, 'errstr populated' )
+  or diag(
+  Dumper(
+    [ response => $response,
+      errstr   => $bad_bucket->errstr,
+      err      => $bad_bucket->err,
+    ]
+  )
+  );
 
 my $max_keys = 25;
 
