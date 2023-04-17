@@ -196,6 +196,7 @@ sub new {
 
     my $cipher = Crypt::CBC->new(
       -pass   => $encryption_key,
+      -key    => $encryption_key,
       -cipher => 'Crypt::Blowfish',
     );
 
