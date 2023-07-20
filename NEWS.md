@@ -7,6 +7,27 @@ previous versions.  If critical bugs are found in any of the software,
 notice of such bugs and the versions in which they were fixed will be
 noted here, as well.
 
+# perl-Amazon-S3 0.64 (2023-07-20)
+
+> This version adds fixes passes a bug in get_location_constraint()
+
+## Enhancements
+
+* None
+
+# perl-Amazon-S3 0.63 (2023-04-17)
+
+> This version adds passes -key and -pass to Crypt::CBC to
+> support older versions of Crypt::CBC
+
+## Enhancements
+
+* None
+
+## Fixes
+
+* pass -key and -pass options to Crypt::CBC
+
 # perl-Amazon-S3 0.62 (2023-04-13)
 
 > This version adds fixes a bug in `list_bucket` and `buckets` methods

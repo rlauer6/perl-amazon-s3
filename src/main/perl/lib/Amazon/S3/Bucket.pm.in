@@ -1077,7 +1077,7 @@ sub get_location_constraint {
     return $lc;
   }
 
-  $lc = $xpc->{content};
+  $lc = $xpc;
 
   if ( defined $lc && $lc eq $EMPTY ) {
     $lc = undef;
