@@ -788,11 +788,11 @@ sub signer {
   my $creds = $self->credentials ? $self->credentials : $self;
 
   my $signer = Amazon::S3::Signature::V4->new(
-    { access_key_id => $creds->get_aws_access_key_id,
-      secret        => $creds->get_aws_secret_access_key,
-      region        => $self->region || $self->get_default_region,
-      service       => 's3',
-      $self->get_token ? ( security_token => $creds->get_token ) : (),
+    { access_key_id  => $creds->get_aws_access_key_id,
+      secret         => $creds->get_aws_secret_access_key,
+      region         => $self->region || $self->get_default_region,
+      service        => 's3',
+      security_token => $creds->get_token,
     },
   );
 

@@ -7,9 +7,21 @@ previous versions.  If critical bugs are found in any of the software,
 notice of such bugs and the versions in which they were fixed will be
 noted here, as well.
 
+# perl-Amazon-S3 0.65 (2023-11-28)
+
+> This version fixes a bug when getting credentials from the the
+> Amazon::Credentials object and that object has a token. This bug
+> manifested itself as a Forbidden error. The error message misleading
+> says the Access Key Id is invalid when the issue is that the session
+> token was never passed to the signer.
+
+## Enhancements
+
+* None
+
 # perl-Amazon-S3 0.64 (2023-07-20)
 
-> This version adds fixes passes a bug in get_location_constraint()
+> This version fixes a bug in get_location_constraint()
 
 ## Enhancements
 
