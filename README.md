@@ -66,7 +66,7 @@ managing Amazon S3 buckets and keys.
 
 # DESCRIPTION
 
-This documentation refers to version 0.65.
+This documentation refers to version 0.66.
 
 `Amazon::S3` provides a portable client interface to Amazon Simple
 Storage System (S3).
@@ -229,6 +229,10 @@ dependencies are impossible to control and include XS modules.
 
 # METHODS AND SUBROUTINES
 
+Unless otherwise noted methods will return an `undef` if an error
+occurs.  You can get more information about the error by calling
+`err()` and `errstr()`.
+
 ## new 
 
 Create a new S3 client object. Takes some arguments:
@@ -311,7 +315,9 @@ Create a new S3 client object. Takes some arguments:
 
     Note that requests are made to domain buckets when possible.  You can
     prevent that behavior if either the bucket name does not conform to
-    DNS bucket naming conventions or you preface the bucket name with '/'.
+    DNS bucket naming conventions or you preface the bucket name with '/'
+    or explicitly turn off domain buckets by setting `dns_bucket_names`
+    to false..
 
     If you set a region then the host name will be modified accordingly if
     it is an Amazon endpoint.
@@ -513,9 +519,24 @@ names.
 
 default: true
 
+## err
+
+Returns the last error. Usually this is the error code returned from
+an API call or a short message that the describes the error. Use
+`errstr` for a more descriptive explanation of the error condition.
+
+## errstr
+
+Detailed error description.
+
 ## list\_bucket, list\_bucket\_v2
 
-List all keys in this bucket.
+List keys in a bucket. Note that this method will only return
+`max-keys`. If you want all of the keys you should use
+`list_bucket_all` or `list_bucket_all_v2`.
+
+_See the note in the `delimiter` and `max-keys` descriptions below
+regarding how keys are counted against the `max-keys` value._
 
 Takes a reference to a hash of arguments:
 
@@ -544,13 +565,52 @@ Takes a reference to a hash of arguments:
     delimiter after the prefix, it appears in the Contents collection.
 
     Each element in the CommonPrefixes collection counts as one against
-    the MaxKeys limit. The rolled-up keys represented by each CommonPrefixes
-    element do not.  If the Delimiter parameter is not present in your
+    the `MaxKeys` limit. The rolled-up keys represented by each CommonPrefixes
+    element do not.  
+
+    In other words, key below the delimiter are not considered in the
+    count.
+
+    Remember that S3 keys do not represent a file system hierarchy
+    although it might look like that depending on how you choose to store
+    objects. Using the `prefix` and `delimiter` parameters essentially
+    allows you to restrict the return set to parts of your key
+    "hierarchy". So in the example above If all I wanted was the very top
+    level of the hierarchy I would set my `delimiter to` '/' and omit the
+    `prefix` parameter.
+
+    If the `Delimiter` parameter is not present in your
     request, keys in the result set will not be rolled-up and neither
     the CommonPrefixes collection nor the NextMarker element will be
     present in the response.
 
     NOTE: CommonPrefixes isn't currently supported by Amazon::S3. 
+
+    Example:
+
+    Suppose I have the keys:
+
+        bar/baz
+        bar/buz
+        bar/buz/biz
+        bar/buz/zip
+
+    And I'm only interest in object directly below 'bar'
+
+        prefix=bar/
+        delimiter=/
+
+    Would yield:
+
+        bar/baz
+        bar/buz
+
+    Omitting the delimiter would yield:
+
+        bar/baz
+        bar/buz
+        bar/buz/biz
+        bar/buz/zip
 
 - max-keys 
 
@@ -559,8 +619,8 @@ Takes a reference to a hash of arguments:
     number of results, but possibly less. Even if max-keys is not
     specified, Amazon S3 will limit the number of results in the response.
     Check the IsTruncated flag to see if your results are incomplete.
-    If so, use the Marker parameter to request the next page of results.
-    For the purpose of counting max-keys, a 'result' is either a key
+    If so, use the `Marker` parameter to request the next page of results.
+    For the purpose of counting `max-key`s, a 'result' is either a key
     in the 'Contents' collection, or a delimited prefix in the
     'CommonPrefixes' collection. So for delimiter requests, max-keys
     limits the total number of list results, not just the number of
@@ -694,7 +754,8 @@ Called to add extra retry codes if retry has been set
 
 ## turn\_off\_special\_retry
 
-Called to turn off special retry codes when we are deliberately triggering them
+Called to turn off special retry codes when we are deliberately
+triggering them
 
 # ABOUT
 
@@ -712,12 +773,13 @@ following notice:
 
 # TESTING
 
-Testing S3 is a tricky thing. Amazon wants to charge you a bit of 
-money each time you use their service. And yes, testing counts as using.
-Because of this, the application's test suite skips anything approaching 
-a real test unless you set these environment variables:
+Testing S3 is a tricky thing. Amazon wants to charge you a bit of
+money each time you use their service. And yes, testing counts as
+using.  Because of this, the application's test suite skips anything
+approaching a real test unless you set certain environment variables.
 
-For more on testing this module see [README-TESTING.md](https://github.com/rlauer6/perl-amazon-s3/blob/master/README-TESTING.md)
+For more on testing this module see
+[README-TESTING.md](https://github.com/rlauer6/perl-amazon-s3/blob/master/README-TESTING.md)
 
 - AMAZON\_S3\_EXPENSIVE\_TESTS
 
