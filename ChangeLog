@@ -1,9 +1,64 @@
 Thu Nov 30 13:56:08 2023  Rob Lauer  <rlauer6@comcast.net>
 
-	[0.66 - unreleased]:
+	[0.66]:
 	* VERSION: bump
+	* NEWS.md: updated
+	* README.md: generated
 	* src/main/perl/lib/Amazon/S3.pm.in: pod updates
 	* README.md: generated
+	* src/main/perl/lib/Amazon/S3/BucketV2.pm.in: new
+	* src/main/perl/lib/Amazon/S3/Util.pm.in: new
+	* src/main/perl/lib/Makefile.am: add above to build
+	* src/main/perl/lib/Amazon/S3.pm.in
+	- refactoring
+	- updated pod
+	(add_bucket): allow additional headers
+	(delete_bucket): likewise
+	(list_bucket)
+	- likewise
+	- allow query parameters
+	(_validate_acl_short): refactored
+	(_make_request): refactored
+	(adjust_region): refactored
+	(_do_http): refactored
+	(_send_request_expect_nothing): refactored
+	(_send_request_expect_nothing_probed): refactored
+	(_remember_errors): refactored
+	(_add_auth_header): refactored
+	(_merge_meta): refactored
+	(_encode): refactored
+	* src/main/perl/lib/Amazon/S3/Bucket.pm.in
+	- refactored
+	(new): refactored
+	(_uri): refactored
+	(add_key): allow for additional headers
+	(upload_mulipart_object)
+	- refactored
+	- allow additional headers
+	(initiate_multipart_upload): likewise
+	(upload_part_of_multipart_upload): likewise
+	(make_xml_document_simple): replaced with _create_multipart_upload_request()
+	(get_key): call _get_key() now
+	(_get_key)
+	- renamed from get_key()
+	- allow additional headers
+	(copy_object): refactored
+	(delete_keys)
+	- refactored
+	- allow additional headers
+	* src/main/perl/lib/Amazon/S3/Constants.pm.in
+	- + $AWS_METADATA_BASE_URL
+	- + markers for ListObjectVersions
+	* src/main/perl/t/01-api.t
+	- create private bucket first, then delete public access block
+	(list_all)
+	- refactored
+	- allow additional headers
+	(get_acl)
+	- refactored
+	- allow additional headers
+	(get_location_constraint): refactored
+	(_create_multipart_upload_request): new
 
 Tue Nov 28 17:42:44 2023  Rob Lauer  <rlauer6@comcast.net>
 

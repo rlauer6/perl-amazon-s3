@@ -75,7 +75,7 @@ for my $location (@REGIONS) {
     $bucket_obj = eval {
       $s3->add_bucket(
         { bucket              => $bucket_name,
-          acl_short           => 'public-read',
+          acl_short           => 'private',
           location_constraint => $location
         }
       );
@@ -115,9 +115,16 @@ for my $location (@REGIONS) {
       skip 'ACLs only for Amazon S3', 3;
     }
 
+    eval { $s3->delete_public_access_block($bucket_obj); };
+
+    BAIL_OUT($EVAL_ERROR)
+      if $EVAL_ERROR;
+
+    my $rsp = $bucket_obj->set_acl( { acl_short => 'public-read' } );
+
     like_acl_allusers_read($bucket_obj);
 
-    my $rsp = $bucket_obj->set_acl( { acl_short => 'private' } );
+    $rsp = $bucket_obj->set_acl( { acl_short => 'private' } );
 
     ok( $rsp, 'set_acl - private' )
       or diag(
@@ -395,12 +402,14 @@ EOT
   $response = $bucket_obj->get_key($keyname);
 
   is( $response->{content_type}, 'text/plain', 'get_key - content_type' );
+
   like( $response->{value}, qr/Lorem\sipsum/xsm, 'get_key - Lorem ipsum' );
 
   is( $response->{etag}, $lorem_ipsum_md5, 'get_key - etag' )
     or diag( Dumper [$response] );
 
   is( $response->{'x-amz-meta-colour'}, 'orangy', 'get_key - metadata' );
+
   is( $response->{content_length},
     $lorem_ipsum_size, 'get_key - content_type' );
 

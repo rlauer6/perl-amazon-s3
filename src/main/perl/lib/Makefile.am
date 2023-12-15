@@ -19,10 +19,12 @@ AMAZON_PERLMODULES = \
 AMAZON_S3_PERLMODULES = \
     Amazon/S3/Bucket.pm.in \
     Amazon/S3/Constants.pm.in \
-    Amazon/S3/Logger.pm.in
+    Amazon/S3/BucketV2.pm.in \
+    Amazon/S3/Logger.pm.in \
+    Amazon/S3/Util.pm.in
 
 AMAZON_S3_SIGNATURE_PERLMODULES = \
-   Amazon/S3/Signature/V4.pm.in
+    Amazon/S3/Signature/V4.pm.in
 
 GPERLMODULES = $(PERLMODULES:.pm.in=.pm)
 
@@ -58,11 +60,17 @@ PERLINCLUDE = \
    -I $(perl5libdir) 
 
 Amazon/S3.pm: Amazon/S3/Constants.pm \
+              Amazon/S3/BucketV2.pm \
 	      Amazon/S3/Bucket.pm \
 	      Amazon/S3/Logger.pm \
-	      Amazon/S3/Signature/V4.pm
+	      Amazon/S3/Signature/V4.pm \
+              Amazon/S3/Util.pm
 
-Amazon/S3/Bucket.pm: Amazon/S3/Constants.pm
+Amazon/S3/Bucket.pm: Amazon/S3/Constants.pm Amazon/S3/BucketV2.pm Amazon/S3/Util.pm
+
+Amazon/S3/BucketV2.pm: Amazon/S3/Constants.pm Amazon/S3/Util.pm Amazon/S3/Bucket.pm
+
+Amazon/S3/Control.pm: Amazon/S3/Constants.pm Amazon/S3/Util.pm
 
 Amazon/S3/Logger.pm: Amazon/S3/Constants.pm
 

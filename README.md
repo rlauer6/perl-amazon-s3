@@ -78,10 +78,33 @@ implementations of:
 - ListObjectsV2
 - CopyObject
 - DeleteObjects
+- ListObjectVersions
 
 Additionally, this module now implements Signature Version 4 signing,
 unit tests have been updated and more documentation has been added or
 corrected. Credentials are encrypted if you have encryption modules installed.
+
+_NEW!_
+
+The `Amazon::S3` modules have been heavily refactored over the last
+year to increase maintainability and to add new features. New features include:
+
+- Addition of version parameter for some methods that can accept
+an object version.
+    - delete\_key
+    - delete\_keys
+    - set\_acl
+- Methods that accept a hash reference can now accept a
+`headers` object that contains any additional headers you might want
+to send with a request. Some of the methods that now allow you to pass
+a header object include:
+    - add\_bucket
+    - add\_key
+    - get\_key
+    - delete\_bucket
+    - list\_bucket
+    - list\_object\_versions
+    - upload\_multipart\_object
 
 ## Comparison to Other Perl S3 Modules
 
@@ -445,8 +468,16 @@ buckets owned by the accout or (see below) or `undef` on error.
 
     add_bucket(bucket-configuration)
 
-`bucket-configuration` is a reference to a hash with bucket configuration
-parameters.
+`bucket-configuration` is a reference to a hash with bucket
+configuration parameters.
+
+_Note that since April of 2023, new buckets are created that block
+public access by default. If you attempt to set an ACL with public
+permissions the create operation will fail. To create a public bucket
+you must first create the bucket with private permissions, remove the
+public block and subsequently apply public permissions._
+
+See ["delete\_public\_access\_block"](#delete_public_access_block).
 
 - bucket
 
@@ -456,12 +487,22 @@ parameters.
 
 - acl\_short (optional)
 
-    See the set\_acl subroutine for documenation on the acl\_short options
+    See the set\_acl subroutine for documenation on the acl\_short
+    options. Note that starting in April of 2023 new buckets are
+    configured to automatically block public access. Trying to create a
+    bucket with public permissions will fail. In order to create a public
+    bucket you must first create a private bucket, then call the
+    DeletePublicAccessBlock API. You can then set public permissions for
+    your bucket using ACLs or a bucket policy.
 
 - location\_constraint
 - region
 
     The region the bucket is to be created in.
+
+- headers
+
+    Additional headers to send with request.
 
 Returns a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object on success or `undef` on failure.
 
@@ -511,6 +552,12 @@ Note from the [Amazon's documentation](https://docs.aws.amazon.com/AmazonS3/late
 > name. In addition, **some time might pass before you can reuse the name
 > of a deleted bucket**. If you want to use the same bucket name, we
 > recommend that you don't delete the bucket.
+
+## delete\_public\_access\_block
+
+    delete_public_access_block(bucket-obj)
+
+Removes the public access block flag for the bucket.
 
 ## dns\_bucket\_names
 
@@ -722,6 +769,75 @@ Takes the same arguments as `list_bucket`.
 
 _You are encouraged to use the newer `list_bucket_all_v2` method._
 
+## list\_object\_versions
+
+    list_object_versions( args ) 
+
+Returns metadata about all versions of the objects in a bucket. You
+can also use request parameters as selection criteria to return
+metadata about a subset of all the object versions.
+
+This method will only return the raw result set and does not perform
+pagination or unravel common prefixes as do other methods like
+`list_bucket`. This may change in the future.
+
+See [https://docs.aws.amazon.com/AmazonS3/latest/API/API\_ListObjectVersions.html](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html)
+for more information about the request parameters and the result body.
+
+`args` is hash reference containing the following parameters:
+
+- bucket
+
+    Name of the bucket. This method is not vailable for directory buckets.
+
+- headers
+
+    Optional headers. See
+    [https://docs.aws.amazon.com/AmazonS3/latest/API/API\_ListObjectVersions.html](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html)
+    for more details regarding optional headers.
+
+- delimiter
+
+    A delimiter is a character that you specify to group keys. All keys
+    that contain the same string between the prefix and the first
+    occurrence of the delimiter are grouped under a single result element
+    in CommonPrefixes. These groups are counted as one result against the
+    max-keys limitation. These keys are not returned elsewhere in the
+    response.
+
+- encoding-type     
+
+    Requests Amazon S3 to encode the object keys in the response and
+    specifies the encoding method to use.
+
+- key-marker        
+
+    Specifies the key to start with when listing objects in a bucket.
+
+- max-keys          
+
+    Sets the maximum number of keys returned in the response. By default,
+    the action returns up to 1,000 key names. The response might contain
+    fewer keys but will never contain more. If additional keys satisfy the
+    search criteria, but were not returned because max-keys was exceeded,
+    the response contains &lt;isTruncated>true&lt;/isTruncated>. To return the
+    additional keys, see key-marker and version-id-marker.
+
+    default: 1000
+
+- prefix            
+
+    Use this parameter to select only those keys that begin with the
+    specified prefix. You can use prefixes to separate a bucket into
+    different groupings of keys. (You can think of using prefix to make
+    groups in the same way that you'd use a folder in a file system.) You
+    can use prefix with delimiter to roll up numerous objects into a
+    single result under CommonPrefixes.
+
+- version-id-marker 
+
+    Specifies the object version you want to start listing from.
+
 ## err
 
 The S3 error code for the last error encountered.
@@ -797,7 +913,7 @@ For more on testing this module see
     can override this behavior by setting `AWS_S3_DNS_BUCKET_NAMES` to any
     value.
 
-- AWS\_S3\_DSN\_BUCKET\_NAMES
+- AWS\_S3\_DNS\_BUCKET\_NAMES
 
     Set this to any value to override the default behavior of disabling
     DNS bucket names during testing.

@@ -23,6 +23,8 @@ Readonly our $DEFAULT_LOG_LEVEL               => 'error';
 Readonly our $MAX_DELETE_KEYS                 => 1000;
 Readonly our $MAX_RETRIES                     => 5;
 Readonly our $DEFAULT_REGION                  => 'us-east-1';
+Readonly our $AWS_METADATA_BASE_URL =>
+  'http://169.254.169.254/latest/meta-data/';
 
 Readonly our $XMLDECL  => '<?xml version="1.0" encoding="UTF-8"?>';
 Readonly our $S3_XMLNS => 'http://s3.amazonaws.com/doc/2006-03-01/';
@@ -37,6 +39,7 @@ Readonly::Hash our %LOG_LEVELS => (
 );
 
 Readonly::Hash our %LIST_OBJECT_MARKERS => (
+  '3' => [qw(KeyMarker NextKeyMarker key-marker)],
   '2' => [qw(ContinuationToken NextContinuationToken continuation-token)],
   '1' => [qw(Marker NextMarker marker)],
 );
@@ -108,6 +111,7 @@ our %EXPORT_TAGS = (
   ],
   misc => [
     qw(
+      $AWS_METADATA_BASE_URL
       $S3_XMLNS
       $XMLDECL
       %LIST_OBJECT_MARKERS
