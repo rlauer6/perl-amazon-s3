@@ -66,7 +66,7 @@ managing Amazon S3 buckets and keys.
 
 # DESCRIPTION
 
-This documentation refers to version 0.66.
+This documentation refers to version 0.65.
 
 `Amazon::S3` provides a portable client interface to Amazon Simple
 Storage System (S3).
@@ -90,7 +90,7 @@ The `Amazon::S3` modules have been heavily refactored over the last
 few releases to increase maintainability and to add new features. New
 features include:
 
-- [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucketV2)
+- [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon::S3::BucketV2)
 
     This new module implements a mechanism to invoke _almost_ all of the
     S3 APIs using a standard calling method.
@@ -98,11 +98,11 @@ features include:
     The module will format your Perl objects as XML payloads and enable
     you to provide all of the parameters required to make an API
     call. Headers and URI parameters can also be passed to the
-    methods. [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucketV2) is a subclass of
-    [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket), meaning you can still invoke all of the same
+    methods. [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon::S3::BucketV2) is a subclass of
+    [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon::S3::Bucket), meaning you can still invoke all of the same
     methods found there.
 
-    See [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucketV2) for more details.
+    See [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon::S3::BucketV2) for more details.
 
 - Limited Support for Directory Buckets
 
@@ -183,7 +183,7 @@ to adhere to best practices as much as possible.
 `Paws::S3` may be a much more robust implementation of a Perl S3
 interface, however this module may still appeal to those that favor
 simplicity of the interface and a lower number of dependencies. The
-new [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucketV2) module now provides access to nearly all
+new [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon::S3::BucketV2) module now provides access to nearly all
 of the main S3 API metods.
 
     Below is the original description of the module.
@@ -212,11 +212,11 @@ of the main S3 API metods.
 > The need for this module arose from some work that needed
 > to work with S3 and would be distributed, installed and used
 > on many various environments where compiled dependencies may
-> not be an option. [Net::Amazon::S3](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3AS3) used [XML::LibXML](https://metacpan.org/pod/XML%3A%3ALibXML)
+> not be an option. [Net::Amazon::S3](https://metacpan.org/pod/Net::Amazon::S3) used [XML::LibXML](https://metacpan.org/pod/XML::LibXML)
 > tying it to that specific and often difficult to install
 > option. In order to remove this potential barrier to entry,
-> this module is forked and then modified to use [XML::SAX](https://metacpan.org/pod/XML%3A%3ASAX)
-> via [XML::Simple](https://metacpan.org/pod/XML%3A%3ASimple).
+> this module is forked and then modified to use [XML::SAX](https://metacpan.org/pod/XML::SAX)
+> via [XML::Simple](https://metacpan.org/pod/XML::Simple).
 
 # LIMITATIONS AND DIFFERENCES WITH EARLIER VERSIONS
 
@@ -418,7 +418,7 @@ Create a new S3 client object. Takes some arguments:
 
 Sets or retrieves the signer object. API calls must be signed using
 your AWS credentials. By default, starting with version 0.54 the
-module will use [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4) as the signer and
+module will use [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net::Amazon::Signature::V4) as the signer and
 instantiate a signer object in the constructor. Note however, that
 signers need your credentials and they _will_ get stored by that
 class, making them susceptible to inadvertant exfiltration. You have a
@@ -446,12 +446,12 @@ false value.
 
 - 3. Pass credentials, set `cache_signer` to a false value.
 
-    Unfortunately, while this will prevent [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4)
+    Unfortunately, while this will prevent [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net::Amazon::Signature::V4)
     from hanging on to your credentials, you credentials will be stored in
     the `Amazon::S3` object.
 
     Starting with version 0.55 of this module, if you have installed
-    [Crypt::CBC](https://metacpan.org/pod/Crypt%3A%3ACBC) and [Crypt::Blowfish](https://metacpan.org/pod/Crypt%3A%3ABlowfish), your credentials will be
+    [Crypt::CBC](https://metacpan.org/pod/Crypt::CBC) and [Crypt::Blowfish](https://metacpan.org/pod/Crypt::Blowfish), your credentials will be
     encrypted using a random key created when the class is
     instantiated. While this is more secure than leaving them in
     plaintext, if the key is discovered (the key however is not stored in
@@ -467,9 +467,9 @@ false value.
 - 5. Do nothing...send the credentials, use the default signer.
 
     In this case, both the `Amazon::S3` class and the
-    [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3ASignature%3A%3AV4) have your credentials. Caveat Emptor.
+    [Net::Amazon::Signature::V4](https://metacpan.org/pod/Net::Amazon::Signature::V4) have your credentials. Caveat Emptor.
 
-    See also [Amazon::Credentials](https://metacpan.org/pod/Amazon%3A%3ACredentials) for more information about safely
+    See also [Amazon::Credentials](https://metacpan.org/pod/Amazon::Credentials) for more information about safely
     storing your credentials and preventing exfiltration.
 
 ## region
@@ -518,7 +518,7 @@ buckets owned by the accout or (see below) or `undef` on error.
 
 - buckets
 
-    An array of [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) objects for the account. Returns
+    An array of [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon::S3::Bucket) objects for the account. Returns
     `undef` if there are not buckets or an error occurs.
 
 ## add\_bucket
@@ -561,7 +561,7 @@ See ["delete\_public\_access\_block"](#delete_public_access_block).
 
     Additional headers to send with request.
 
-Returns a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object on success or `undef` on failure.
+Returns a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon::S3::Bucket) object on success or `undef` on failure.
 
 ## bucket
 
@@ -578,12 +578,12 @@ If you do not pass the region or set the `verify_region` value, the
 region will be set to the default region set in your `Amazon::S3`
 object.
 
-See [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) for a complete description of the `bucket`
+See [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon::S3::Bucket) for a complete description of the `bucket`
 method.
 
 ## delete\_bucket
 
-Takes either a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket) object or a reference to a hash
+Takes either a [Amazon::S3::Bucket](https://metacpan.org/pod/Amazon::S3::Bucket) object or a reference to a hash
 containing:
 
 - bucket
@@ -909,11 +909,11 @@ The decoded XML string as a hash object of the last error.
 
 ## last\_response
 
-Returns the last [HTTP::Response](https://metacpan.org/pod/HTTP%3A%3AResponse) object.
+Returns the last [HTTP::Response](https://metacpan.org/pod/HTTP::Response) object.
 
 ## last\_request
 
-Returns the last [HTTP::Request](https://metacpan.org/pod/HTTP%3A%3ARequest) object.
+Returns the last [HTTP::Request](https://metacpan.org/pod/HTTP::Request) object.
 
 ## level
 
@@ -1100,11 +1100,11 @@ Current maintainer: Rob Lauer <bigfoot@cpan.org>
 
 # SEE ALSO
 
-[Amazon::S3::Bucket](https://metacpan.org/pod/Amazon%3A%3AS3%3A%3ABucket), [Net::Amazon::S3](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3AS3)
+[Amazon::S3::Bucket](https://metacpan.org/pod/Amazon::S3::Bucket), [Net::Amazon::S3](https://metacpan.org/pod/Net::Amazon::S3)
 
 # COPYRIGHT AND LICENCE
 
-This module was initially based on [Net::Amazon::S3](https://metacpan.org/pod/Net%3A%3AAmazon%3A%3AS3) 0.41, by
+This module was initially based on [Net::Amazon::S3](https://metacpan.org/pod/Net::Amazon::S3) 0.41, by
 Leon Brocard. Net::Amazon::S3 was based on example code from
 Amazon with this notice:
 

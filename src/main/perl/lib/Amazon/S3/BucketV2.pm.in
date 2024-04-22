@@ -4,17 +4,17 @@ use strict;
 use warnings;
 
 use Amazon::S3::Constants qw(:all);
-use Amazon::S3::Util      qw(:all);
+use Amazon::S3::Util qw(:all);
 
 use Carp;
 use Data::Dumper;
-use English      qw(-no_match_vars);
-use List::Util   qw(pairs);
+use English qw(-no_match_vars);
+use List::Util qw(pairs);
 use Scalar::Util qw(reftype);
 
 use parent qw(Amazon::S3::Bucket);
 
-our $VERSION = '@PACKAGE_VERSION@'; ## no critic (RequireInterpolation)
+our $VERSION = '@PACKAGE_VERSION@';  ## no critic (RequireInterpolation)
 
 ######################################################################
 our @GET_OBJECT_METHODS = (
@@ -287,7 +287,7 @@ sub create_methods {
 
   my ( $type, $method, $method_def ) = @args{qw( type method method_def)};
 
-  no strict 'refs'; ## no critic
+  no strict 'refs';  ## no critic
 
   foreach my $p ( pairs @{$method_def} ) {
     my ( $sub_name, $api ) = @{$p};
@@ -300,8 +300,7 @@ sub create_methods {
     my $anon = sub {
       my ( $self, %args ) = @_;
 
-      my ( $key, $body, $uri_params, $headers )
-        = @args{qw(key body uri_param headers)};
+      my ( $key, $body, $uri_params, $headers ) = @args{qw(key body uri_param headers)};
       $uri_params //= {};
 
       return $self->send_request(
@@ -334,7 +333,7 @@ Amazon::S3::BucketV2 - lightweight interface to various S3 methods
 =head1 SYNOPSIS
 
   use Amazon::S3;
-  use Amazin::S3::BucketV2;
+  use Amazon::S3::BucketV2;
 
   my $s3 = Amazon::S3->new(
       {   aws_access_key_id     => $aws_access_key_id,
@@ -353,16 +352,17 @@ Amazon::S3::BucketV2 - lightweight interface to various S3 methods
 
 =head1 DESCRIPTION
 
-A lightweight generic interface to the AWS S3
+A lightweight, generic interface to the AWS S3
 API. C<Amazon::S3::BucketV2> is a subclass of L<Amazon::S3::Bucket>. In
 addition to the methods described below you can still use the
 convenience methods offered in the parent class.
 
-I<Note that this is an experimental implementation and may change in the future.>
+I<Note that this is an experimental implementation and may change in
+the future.>
 
-The methods listed below will should be called with a list (or hash
-ref) of key/value pairs.  Depending on your needs and the API being
-invoked some of these keys may not be required.
+The methods listed below should be called with a list (or hash
+reference) of key/value pairs.  Depending on your needs and the API
+being invoked some of these keys may not be required.
 
 =over 5
 
@@ -375,16 +375,51 @@ The key in the S3 bucket.
 The request body. This should be a hash ref which will be converted
 to an XML payload to be sent for the request.
 
-You need to review the required payload for the API being invoked and provide the appropriate Perl object to be converted to XML.
+You need to review the required payload for the API being invoked and
+provide the appropriate Perl object to be converted to XML.
 
-To see how your Perl object will be serialized call the C<create_xml> method.
+To see how your Perl object will be serialized call the C<create_xml>
+method.
+
+For example the DeleteObjects API takes a payload that looks like this:
+
+ <Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+    <Object>
+       <Key>string</Key>
+       <VersionId>string</VersionId>
+    </Object>
+    ...
+    <Quiet>boolean</Quiet>
+ </Delete>
+
+The corresponding Perl object would be created like this:
+
+ my $content = {
+   Delete => {
+     Object => [
+       { Key       => '/foo',
+         VersionId => 'OYcLXagmS.WaD..oyH4KRguB95_YhLs7'
+       }
+     ]
+   }
+ };
+
+
+...and to verify how that Perl object would be serialized as XML:
 
  use Amazon::S3::Util qw(create_xml_request);
 
- my $content
-   = { Delete => { Object => [ { Key => $key, Version => $version } ] } };
+ my $content = {
+   Delete => {
+     Object => [
+       { Key       => '/foo',
+         VersionId => 'OYcLXagmS.WaD..oyH4KRguB95_YhLs7'
+       }
+     ]
+   }
+ };
 
-  print create_xml_request($content);
+ print create_xml_request($content);
  
 =item uri_params
 
@@ -411,7 +446,266 @@ Example:
 
 =head1 METHODS AND SUBROUTINES
 
+The methods below can be called in snake or CamelCase.  Consult the
+official AWS S3 API guide for documentation on each method.
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/Welcome.html>
+
+=head2 delete_bucket
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucket.html>
+
+=head2 delete_bucket_analytics_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketAnalyticsConfiguration.html>
+
+=head2 delete_bucket_cors
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketCors.html>
+
+=head2 delete_bucket_encryption
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketEncryption.html>
+
+=head2 delete_bucket_intelligent_tiering
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketIntelligentTiering.html>
+
+=head2 delete_bucket_inventory_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketInventoryConfiguration.html>
+
+=head2 delete_bucket_lifecycle
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketLifecycle.html>
+
+=head2 delete_bucket_metrics_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketMetricsConfiguration.html>
+
+=head2 delete_bucket_ownership_controls
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketOwnershipControls.html>
+
+=head2 delete_bucket_policy
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketPolicy.html>
+
+=head2 delete_bucket_replication
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketReplication.html>
+
+=head2 delete_bucket_tagging
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketTagging.html>
+
+=head2 delete_bucket_website
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketWebsite.html>
+
+=head2 delete_object
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObject.html>
+
+=head2 delete_objects
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html>
+
+=head2 delete_object_tagging
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjectTagging.html>
+
+=head2 delete_public_access_block
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeletePublicAccessBlock.html>
+
+=head2 get_bucket_accelerate_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketAccelerateConfiguration.html>
+
+=head2 get_bucket_acl
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketAcl.html>
+
+=head2 get_bucket_analytics
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketAnalytics.html>
+
+=head2 get_bucket_cors
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketCors.html>
+
+=head2 get_bucket_encryption
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketEncryption.html>
+
+=head2 get_bucket_intelligent_tiering_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketIntelligentTieringConfiguration.html>
+
+=head2 get_bucket_inventory_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketInventoryConfiguration.html>
+
+=head2 get_bucket_lifecycle_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLifecycleConfiguration.html>
+
+=head2 get_bucket_location
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLocation.html>
+
+=head2 get_bucket_logging
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLogging.html>
+
+=head2 get_bucket_metrics_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketMetricsConfiguration.html>
+
+=head2 get_bucket_notification_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketNotificationConfiguration.html>
+
+=head2 get_bucket_ownership_controls
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketOwnershipControls.html>
+
+=head2 get_bucket_policy
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketPolicy.html>
+
+=head2 get_bucket_policy_status
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketPolicyStatus.html>
+
+=head2 get_bucket_replication
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketReplication.html>
+
+=head2 get_bucket_request_payment
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketRequestPayment.html>
+
+=head2 get_bucket_tagging
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketTagging.html>
+
+=head2 get_bucket_versioning
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketVersioning.html>
+
+=head2 get_bucket_website
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketWebsite.html>
+
+=head2 get_object_acl
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectAcl.html>
+
+=head2 get_object_attributes
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectAttributes.html>
+
+=head2 get_object_legal_hold
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectLegalHold.html>
+
+=head2 get_object_lock_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectLockConfiguration.html>
+
+=head2 get_object_retention
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectRetention.html>
+
+=head2 get_object_tagging
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectTagging.html>
+
+=head2 get_object_torrent
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObjectTorrent.html>
+
+=head2 get_public_access_block
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetPublicAccessBlock.html>
+
+=head2 put_bucket_cors
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketCors.html>
+
+=head2 put_bucket_encryption
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketEncryption.html>
+
+=head2 put_bucket_intelligent_tiering_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketIntelligentTieringConfiguration.html>
+
+=head2 put_bucket_lifecycle
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycle.html>
+
+=head2 put_bucket_lifecycle_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html>
+
+=head2 put_bucket_replication_configuration
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketReplicationConfiguration.html>
+
+=head2 put_bucket_tagging
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketTagging.html>
+
+=head2 put_bucket_versioning
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketVersioning.html>
+
+=head2 put_object
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html>
+
+=head2 put_object_acl
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObjectAcl.html>
+
+=head2 put_object_legal_hold
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObjectLegalHold.html>
+
+=head2 put_object_lock_configuraiton
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObjectLockConfiguraiton.html>
+
+=head2 put_object_retention
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObjectRetention.html>
+
+=head2 put_object_tagging
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObjectTagging.html>
+
+=head2 put_public_access_block
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutPublicAccessBlock.html>
+
+=head2 restore_object
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_RestoreObject.html>
+
+=head2 upload_part
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPart.html>
+
+=head2 upload_part_copy
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html>
+
 =head1 SEE OTHER
+
+L<Amazon::S3>, L<Amazon::S3::Bucket>
 
 =head1 AUTHOR
 
