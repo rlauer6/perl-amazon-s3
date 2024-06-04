@@ -685,7 +685,7 @@ sub _get_key {
 
   my $retval = {
     content_length => ( $response->content_length || 0 ),
-    content_type   => $response->content_type,
+    content_type   => scalar $response->content_type,
     etag           => $etag,
     value          => ( $response->content // $EMPTY ),
     content_range  => ( $response->header('Content-Range') || $EMPTY ),
