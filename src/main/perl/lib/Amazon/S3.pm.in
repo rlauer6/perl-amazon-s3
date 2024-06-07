@@ -203,11 +203,11 @@ sub use_express_one_zone {
           return md5_hex( rand $PID );
         }
       };
+
+      return $text if $EVAL_ERROR;
     }
 
-    if ( !$encryption_key || $EVAL_ERROR ) {
-      return $text;
-    }
+    return $text if !$encryption_key;
 
     my $cipher = Crypt::CBC->new(
       -pass        => $encryption_key,
