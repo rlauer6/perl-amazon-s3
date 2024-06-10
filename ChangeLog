@@ -1,3 +1,14 @@
+Mon Jun 10 08:33:31 2024  Rob Lauer  <rlauer6@comcast.net>
+
+	[2.0.2]:
+	* src/main/perl/lib/Amazon/S3/Bucket.pm.in
+	- issue #16 - Small fix for error when retrieving keys
+	  with charset spec in content-type
+	* src/main/perl/lib/Amazon/S3.pm.in
+	- issue #17 - Fixed a bug where encryption was impossible in special cases
+	* VERSION: bump
+	* README.md: version
+
 Mon Jun 10 07:30:59 2024  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.66]:
