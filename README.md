@@ -66,7 +66,7 @@ managing Amazon S3 buckets and keys.
 
 # DESCRIPTION
 
-This documentation refers to version 0.66.
+This documentation refers to version 2.0.2.
 
 `Amazon::S3` provides a portable client interface to Amazon Simple
 Storage System (S3).
@@ -104,7 +104,48 @@ features include:
 
     See [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon::S3::BucketV2) for more details.
 
+- Limited Support for Directory Buckets
+
+    This version include limited support for directory buckets.
+
+    You can create and list directory buckets.
+
+    _Directory buckets use the S3 Express One Zone storage class, which
+    is recommended if your application is performance sensitive and
+    benefits from single-digit millisecond PUT and GET latencies._ -
+    [https://docs.aws.amazon.com/AmazonS3/latest/userguide/directory-buckets-overview.html](https://docs.aws.amazon.com/AmazonS3/latest/userguide/directory-buckets-overview.html)
+
+    - list\_directory\_buckets
+
+        List the directory buckets. Note this only returns a list of you
+        directory buckets, not their contents. In order to list the contents
+        of a directory bucket you must first create a session that establishes
+        temporary credentials used to acces the Zonal endpoints. You then use
+        those credentials for signing requests using the ListObjectV2 API.
+
+        This process is currently **not supported** by this class.
+
+        [https://docs.aws.amazon.com/AmazonS3/latest/API/API\_CreateSession.html](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateSession.html)
+
+        <Lhttps://docs.aws.amazon.com/AmazonS3/latest/API/API\_ListObjectsV2.html>
+
+    - add\_bucket
+
+        You can add a regin and availability zone to this call in order to
+        create a directory bucket.
+
+            $bucket->add_bucket({ bucket => $bucket_name, availability_zone => 'use1-az5' });
+
+        Note that your bucket name must conform to the naming conventions for
+        directory buckets. -
+        [https://docs.aws.amazon.com/AmazonS3/latest/userguide/directory-buckets-overview.html#directory-buckets-name](https://docs.aws.amazon.com/AmazonS3/latest/userguide/directory-buckets-overview.html#directory-buckets-name)
+
 - Addition of version parameter for `delete_key`
+
+    You can now delete a version of a key by including its verion ID.
+
+        $bucket->delete_key($key, $version_id);
+
 - Methods that accept a hash reference can now accept a
 `headers` object that may contain any additional headers you might want
 to send with a request. Some of the methods that now allow you to pass
@@ -112,6 +153,10 @@ a header object include:
     - add\_bucket
     - add\_key
     - get\_key
+
+        Can now be called with a hashref which may include both a `headers`
+        and `uri_params` object.
+
     - delete\_bucket
     - list\_bucket
     - list\_object\_versions
@@ -135,10 +180,13 @@ Perl modules in lieu of raw Perl code to increase maintainability and
 stability as well as some refactoring. `Amazon::S3` also strives now
 to adhere to best practices as much as possible.
 
-`Paws::S3` may be a much more robust implementation of
-a Perl S3 interface, however this module may still appeal to
-those that favor simplicity of the interface and a lower number of
-dependencies. Below is the original description of the module.
+`Paws::S3` may be a much more robust implementation of a Perl S3
+interface, however this module may still appeal to those that favor
+simplicity of the interface and a lower number of dependencies. The
+new [Amazon::S3::BucketV2](https://metacpan.org/pod/Amazon::S3::BucketV2) module now provides access to nearly all
+of the main S3 API metods.
+
+    Below is the original description of the module.
 
 > Amazon S3 is storage for the Internet. It is designed to
 > make web-scale computing easier for developers. Amazon S3
@@ -180,7 +228,8 @@ number of dependencies and make it _easy to install_. Recent changes
 to this module have introduced new dependencies in order to improve
 the maintainability and provide additional features. Installing CPAN
 modules is never easy, especially when the dependencies of the
-dependencies are impossible to control and include XS modules.
+dependencies are impossible to control and include may include XS
+modules.
 
 - MINIMUM PERL
 
@@ -207,7 +256,9 @@ dependencies are impossible to control and include XS modules.
         LWP 6.13
         Amazon::S3
 
-    ...other versions _may_ work...YMMV.
+    ...other versions _may_ work...YMMV. If you do decide to run on an
+    earlier version of `perl`, you are encouraged to run the test
+    suite. See the ["TESTING"](#testing) section for more details.
 
 - API Signing
 
@@ -245,11 +296,6 @@ dependencies are impossible to control and include XS modules.
     - Signature Version 2
 
         [https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html)
-
-- New APIs
-
-    This module does not support some of the newer API method calls
-    for S3 added after the initial creation of this interface.
 
 - Multipart Upload Support
 
@@ -351,7 +397,7 @@ Create a new S3 client object. Takes some arguments:
     prevent that behavior if either the bucket name does not conform to
     DNS bucket naming conventions or you preface the bucket name with '/'
     or explicitly turn off domain buckets by setting `dns_bucket_names`
-    to false..
+    to false.
 
     If you set a region then the host name will be modified accordingly if
     it is an Amazon endpoint.
@@ -428,7 +474,7 @@ false value.
 
 ## region
 
-Sets the region for the  API calls. This will also be the
+Sets the region for the API calls. This will also be the
 default when instantiating the bucket object unless you pass the
 region parameter in the `bucket` method or use the `verify_region`
 flag that will _always_ verify the region of the bucket using the

@@ -7,22 +7,23 @@ previous versions.  If critical bugs are found in any of the software,
 notice of such bugs and the versions in which they were fixed will be
 noted here, as well.
 
-# perl-Amazon-S3 2.00 (2023-12-13)
+# perl-Amazon-S3 2.0.1 (2024-04-22)
 
 > This version introduces several new methods. Much of the legacy code has
 > been refactored for clarity and to reduce duplication.  A new set of
-> S3 methods have been implemented in `Amazon::S3::V2`. Some of
+> S3 methods have been implemented in `Amazon::S3::BucketV2`. Some of
 > the new methods duplicate existing functionality but are now
 > implemented with interfaces that are more aligned with the actual
-> AWS API documentation. The new methods in `Amazon::S3::V2` are named
+> AWS API documentation. The new methods in `Amazon::S3::BucketV2` are named
 > after the documented API. Not all API actions have been implemented yet.
 >
 > Additionally, many of the existing methods have been modified slightly to allow
 > for specifying object versions or to allow for setting additional
-> headers which were previously ignored.
+> headers which were previously ignored. These methods are still
+> backward compatible with previous versions
 >
 > See the documentation for `Amazon::S3`, `Amazon::S3::Bucket` and
-> `Amazon::S3::V2` for more details.
+> `Amazon::S3::BucketV2` for more details.
 
 # perl-Amazon-S3 0.66 (2024-06-10)
 

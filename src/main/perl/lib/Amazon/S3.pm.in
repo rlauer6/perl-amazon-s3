@@ -6,7 +6,16 @@ use warnings;
 use Amazon::S3::Bucket;
 use Amazon::S3::BucketV2;
 use Amazon::S3::Constants qw(:all);
-use Amazon::S3::Util      qw(set_md5_header urlencode get_parameters);
+
+use Amazon::S3::Util qw(
+  set_md5_header
+  urlencode
+  get_parameters
+  create_xml_request
+  create_api_uri
+  create_query_string
+);
+
 use Amazon::S3::Logger;
 use Amazon::S3::Signature::V4;
 
@@ -38,6 +47,7 @@ __PACKAGE__->mk_accessors(
     err
     errstr
     error
+    express
     host
     last_request
     last_response
@@ -69,6 +79,7 @@ sub new {
   $options{dns_bucket_names} //= $TRUE;
   $options{cache_signer}     //= $FALSE;
   $options{retry}            //= $FALSE;
+  $options{express}          //= $FALSE;
 
   $options{_region} = delete $options{region};
   $options{_signer} = delete $options{signer};
@@ -148,9 +159,28 @@ sub new {
     $self->_signer( $self->signer );
   }
 
+  if ( $self->express ) {
+    $self->use_express_one_zone();
+  }
+
   $self->turn_on_special_retry();
 
   return $self;
+}
+
+########################################################################
+sub use_express_one_zone {
+########################################################################
+  my ($self) = @_;
+
+  my $express = $self->express;
+
+  $self->express($TRUE);
+
+  $self->host( sprintf 's3express-control.%s.amazonaws.com', $self->region );
+  $self->dns_bucket_names($FALSE);
+
+  return $express;
 }
 
 ########################################################################
@@ -427,13 +457,6 @@ sub add_bucket {
 ########################################################################
   my ( $self, $conf ) = @_;
 
-  my $region = $conf->{location_constraint} // $conf->{region}
-    // $self->region;
-
-  if ( $region && $region eq $DEFAULT_REGION ) {
-    undef $region;
-  }
-
   my $bucket = $conf->{bucket};
 
   croak 'must specify bucket'
@@ -448,13 +471,60 @@ sub add_bucket {
     $headers->{'x-amz-object-ownership'} //= 'ObjectWriter';
   }
 
-  my $xml = <<'XML';
-<CreateBucketConfiguration>
-  <LocationConstraint>%s</LocationConstraint>
-</CreateBucketConfiguration>
-XML
+  my $region = $conf->{location_constraint} // $conf->{region};
 
-  my $data = defined $region ? sprintf $xml, $region : $EMPTY;
+  $region //= $self->region;
+
+  if ( $region && $region eq $DEFAULT_REGION ) {
+    undef $region;
+  }
+
+  return $self->_add_bucket(
+    { headers           => $headers,
+      bucket            => $conf->{bucket},
+      region            => $region,
+      availability_zone => $conf->{availability_zone},
+    }
+  );
+}
+
+########################################################################
+sub _add_bucket {
+########################################################################
+  my ( $self, @args ) = @_;
+
+  my $parameters = get_parameters(@args);
+
+  my ( $bucket, $headers, $region, $availability_zone )
+    = @{$parameters}{qw(bucket headers region availability_zone)};
+
+  $region  //= $EMPTY;
+  $headers //= {};
+
+  my $request
+    = { CreateBucketConfiguration => { LocationConstraint => $region, } };
+
+  if ($availability_zone) {
+    $request->{CreateBucketConfiguration}->{Location} = {
+      Name => $availability_zone,
+      Type => 'AvailabilityZone',
+    };
+
+    $request->{CreateBucketConfiguration}->{Bucket} = {
+      DataRedundancy => 'SingleAvailabilityZone',
+      Type           => 'Directory',
+    };
+
+    delete $request->{CreateBucketConfiguration}->{LocationConstraint};
+  }
+
+  $self->dns_bucket_names(0);
+
+  my $data
+    = ( $region || $availability_zone )
+    ? create_xml_request($request)
+    : $EMPTY;
+
   $headers->{'Content-Length'} = length $data;
 
   my $retval = $self->_send_request_expect_nothing(
@@ -530,6 +600,29 @@ sub delete_bucket {
       region  => $region,
     },
   );
+}
+
+########################################################################
+sub list_directory_buckets {
+########################################################################
+  my ( $self, @args ) = @_;
+
+  my $parameters = get_parameters(@args);
+
+  my $express = $self->use_express_one_zone;
+
+  my $result = $self->_send_request(
+    { method     => 'GET',
+      headers    => {},
+      path       => $SLASH,
+      uri_params => $parameters->{uri_params} // {},
+      region     => $self->region,
+    }
+  );
+
+  $self->express($express);
+
+  return $result;
 }
 
 ########################################################################
@@ -795,13 +888,8 @@ sub list_object_versions {
     }
   }
 
-  my $query_string = join $AMPERSAND,
-    map { $_ . $EQUAL_SIGN . urlencode( $conf->{$_} ) }
-    keys %{$conf};
-
-  my $path = sprintf '%s/?versions&%s', $bucket, $query_string // $EMPTY;
-
-  $self->get_logger->debug( sprintf 'PATH: %s', $path );
+  my $path
+    = create_api_uri( path => "$bucket/", api => 'versions', %{$conf} );
 
   my $r = $self->_send_request(
     { method  => 'GET',
@@ -811,18 +899,10 @@ sub list_object_versions {
     },
   );
 
-  $self->get_logger->trace(
-    Dumper(
-      [ r      => $r,
-        errstr => $self->errstr,
-      ]
-    )
-  );
-
   return
     if !$r || $self->errstr;
 
-  $self->get_logger->trace(
+  $self->get_logger->debug(
     sub {
       return Dumper(
         [ marker      => $marker,
@@ -890,13 +970,14 @@ sub signer {
   return $self->_signer
     if $self->_signer;
 
-  my $creds = $self->credentials ? $self->credentials : $self;
+  my $creds   = $self->credentials ? $self->credentials : $self;
+  my $express = $self->express;
 
   my $signer = Amazon::S3::Signature::V4->new(
     { access_key_id  => $creds->get_aws_access_key_id,
       secret         => $creds->get_aws_secret_access_key,
       region         => $self->region || $self->get_default_region,
-      service        => 's3',
+      service        => $express ? 's3express' : 's3',
       security_token => $creds->get_token,
     },
   );
@@ -978,6 +1059,7 @@ sub _make_request {
   $metadata //= {};
 
   $data //= $EMPTY;
+  $headers->{'Content-Length'} //= length $data;
 
   my $http_headers = $self->_merge_meta( $headers, $metadata );
 
@@ -1043,7 +1125,9 @@ sub _make_request {
 
   $self->last_request($request);
 
-  $request->content($data);
+  if ($data) {
+    $request->content($data);
+  }
 
   $self->signer->region($region); # always set regional endpoint for signing
 
@@ -1822,7 +1906,51 @@ methods found there.
 
 See L<Amazon::S3::BucketV2> for more details.
 
+=item Limited Support for Directory Buckets
+
+This version include limited support for directory buckets.
+
+You can create and list directory buckets.
+
+I<Directory buckets use the S3 Express One Zone storage class, which
+is recommended if your application is performance sensitive and
+benefits from single-digit millisecond PUT and GET latencies.> -
+L<https://docs.aws.amazon.com/AmazonS3/latest/userguide/directory-buckets-overview.html>
+
+=over 10
+
+=item list_directory_buckets
+
+List the directory buckets. Note this only returns a list of you
+directory buckets, not their contents. In order to list the contents
+of a directory bucket you must first create a session that establishes
+temporary credentials used to acces the Zonal endpoints. You then use
+those credentials for signing requests using the ListObjectV2 API.
+
+This process is currently B<not supported> by this class.
+
+L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateSession.html>
+
+<Lhttps://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html>
+
+=item add_bucket
+
+You can add a regin and availability zone to this call in order to
+create a directory bucket.
+
+ $bucket->add_bucket({ bucket => $bucket_name, availability_zone => 'use1-az5' });
+
+Note that your bucket name must conform to the naming conventions for
+directory buckets. -
+L<https://docs.aws.amazon.com/AmazonS3/latest/userguide/directory-buckets-overview.html#directory-buckets-name>
+ 
+=back
+
 =item Addition of version parameter for C<delete_key>
+
+You can now delete a version of a key by including its verion ID.
+
+ $bucket->delete_key($key, $version_id);
 
 =item Methods that accept a hash reference can now accept a
 C<headers> object that may contain any additional headers you might want
@@ -1836,6 +1964,9 @@ a header object include:
 =item add_key
 
 =item get_key
+
+Can now be called with a hashref which may include both a C<headers>
+and C<uri_params> object.
 
 =item delete_bucket
 
@@ -1867,10 +1998,13 @@ Perl modules in lieu of raw Perl code to increase maintainability and
 stability as well as some refactoring. C<Amazon::S3> also strives now
 to adhere to best practices as much as possible.
 
-C<Paws::S3> may be a much more robust implementation of
-a Perl S3 interface, however this module may still appeal to
-those that favor simplicity of the interface and a lower number of
-dependencies. Below is the original description of the module.
+C<Paws::S3> may be a much more robust implementation of a Perl S3
+interface, however this module may still appeal to those that favor
+simplicity of the interface and a lower number of dependencies. The
+new L<Amazon::S3::BucketV2> module now provides access to nearly all
+of the main S3 API metods.
+
+ Below is the original description of the module.
 
 =over 10
 
@@ -1916,7 +2050,8 @@ number of dependencies and make it I<easy to install>. Recent changes
 to this module have introduced new dependencies in order to improve
 the maintainability and provide additional features. Installing CPAN
 modules is never easy, especially when the dependencies of the
-dependencies are impossible to control and include XS modules.
+dependencies are impossible to control and include may include XS
+modules.
 
 =over 5
 
@@ -1945,7 +2080,9 @@ In this order install:
  LWP 6.13
  Amazon::S3
 
-...other versions I<may> work...YMMV.
+...other versions I<may> work...YMMV. If you do decide to run on an
+earlier version of C<perl>, you are encouraged to run the test
+suite. See the L</TESTING> section for more details.
 
 =item API Signing
 
@@ -1987,11 +2124,6 @@ region ('us-east-1') will be used.
 L<https://docs.aws.amazon.com/AmazonS3/latest/userguide/RESTAuthentication.html>
 
 =back
-
-=item New APIs
-
-This module does not support some of the newer API method calls
-for S3 added after the initial creation of this interface.
 
 =item Multipart Upload Support
 
@@ -2097,7 +2229,7 @@ Note that requests are made to domain buckets when possible.  You can
 prevent that behavior if either the bucket name does not conform to
 DNS bucket naming conventions or you preface the bucket name with '/'
 or explicitly turn off domain buckets by setting C<dns_bucket_names>
-to false..
+to false.
 
 If you set a region then the host name will be modified accordingly if
 it is an Amazon endpoint.
@@ -2180,7 +2312,7 @@ storing your credentials and preventing exfiltration.
 
 =head2 region
 
-Sets the region for the  API calls. This will also be the
+Sets the region for the API calls. This will also be the
 default when instantiating the bucket object unless you pass the
 region parameter in the C<bucket> method or use the C<verify_region>
 flag that will I<always> verify the region of the bucket using the
@@ -2241,7 +2373,6 @@ C<undef> if there are not buckets or an error occurs.
 
 C<bucket-configuration> is a reference to a hash with bucket
 configuration parameters.
-
 
 I<Note that since April of 2023, new buckets are created that block
 public access by default. If you attempt to set an ACL with public

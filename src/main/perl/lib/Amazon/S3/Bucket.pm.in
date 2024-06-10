@@ -403,6 +403,12 @@ sub upload_part_of_multipart_upload {
 
   set_md5_header( data => $data, headers => $headers );
 
+  my $path = create_api_uri(
+    path       => $self->_uri($key),
+    partNumber => ${part_number},
+    uploadId   => ${upload_id}
+  );
+
   my $params = $QUESTION_MARK
     . create_query_string(
     partNumber => ${part_number},
@@ -411,15 +417,20 @@ sub upload_part_of_multipart_upload {
 
   $self->logger->debug(
     sub {
-      return 'uploading ' . sprintf 'part: %s length: %s',
-        $part_number, length $data;
+      return Dumper(
+        [ part   => $part_number,
+          length => length $data,
+          path   => $path,
+        ]
+      );
     }
   );
 
   my $request = $acct->_make_request(
-    { region  => $self->region,
-      method  => 'PUT',
-      path    => $self->_uri($key) . $params,
+    { region => $self->region,
+      method => 'PUT',
+      path   => $self->_uri($key) . $params,
+      #path    => $path,
       headers => $headers,
       data    => $data,
     },
@@ -595,7 +606,7 @@ sub head_key {
 }
 
 ########################################################################
-sub get_key {
+sub get_key_v2 {
 ########################################################################
   my ( $self, $key, $method, $headers ) = @_;
 
@@ -603,19 +614,52 @@ sub get_key {
 }
 
 ########################################################################
+sub get_key {
+########################################################################
+  my ( $self, @args ) = @_;
+
+  my ( $key, $method, $headers, $uri_params );
+
+  if ( ref $args[0] ) {
+    ( $key, $method, $headers, $uri_params )
+      = @{ $args[0] }{qw(key method headers uri_params)};
+  }
+  else {
+    ( $key, $method, $headers, $uri_params ) = @args;
+  }
+
+  return $self->_get_key(
+    key        => $key,
+    method     => $method,
+    filename   => undef,
+    headers    => $headers,
+    uri_params => $uri_params,
+  );
+}
+
+########################################################################
 sub _get_key {
 ########################################################################
-  my ( $self, $key, $method, $filename, $headers ) = @_;
+  my ( $self, @args ) = @_;
+
+  my $parameters = get_parameters(@args);
+
+  my ( $key, $method, $filename, $headers, $uri_params )
+    = @{$parameters}{qw(key method filename headers uri_params)};
 
   $method //= 'GET';
+
+  my $uri = $self->_uri($key);
+
+  if ( $uri_params && keys %{$uri_params} ) {
+    $uri = $QUESTION_MARK . create_query_string($uri_params);
+  }
 
   if ( ref $filename ) {
     $filename = ${$filename};
   }
 
   my $acct = $self->account;
-
-  my $uri = $self->_uri($key);
 
   my $request = $acct->_make_request(
     { region  => $self->region,
@@ -625,11 +669,9 @@ sub _get_key {
     },
   );
 
-  my $retval;
-
   my $response = $acct->_do_http( $request, $filename );
 
-  return $retval
+  return
     if $response->code eq $HTTP_NOT_FOUND;
 
   $acct->_croak_if_response_error($response);
@@ -641,15 +683,17 @@ sub _get_key {
     $etag =~ s/"$//xsm;
   }
 
-  $retval = {
-    content_length => $response->content_length || 0,
+  my $retval = {
+    content_length => ( $response->content_length || 0 ),
     content_type   => $response->content_type,
     etag           => $etag,
-    value          => $response->content,
+    value          => ( $response->content // $EMPTY ),
+    content_range  => ( $response->header('Content-Range') || $EMPTY ),
+    last_modified  => ( $response->header('Last-Modified') || $EMPTY ),
   };
 
-  # Validate against data corruption by verifying the MD5
-  if ( $method eq 'GET' ) {
+  # Validate against data corruption by verifying the MD5 (only if not partial)
+  if ( $method eq 'GET' && $response->code ne $HTTP_PARTIAL_CONTENT ) {
     my $md5
       = ( $filename and -f $filename )
       ? file_md5_hex($filename)
@@ -672,13 +716,29 @@ sub _get_key {
 ########################################################################
 sub get_key_filename {
 ########################################################################
-  my ( $self, $key, $method, $filename, $headers ) = @_;
+  my ( $self, @args ) = @_;
+
+  my ( $key, $method, $filename, $headers, $uri_params );
+
+  if ( ref $args[0] ) {
+    ( $key, $method, $filename, $headers, $uri_params )
+      = @{ $args[0] }{qw(key method filename headers uri_params)};
+  }
+  else {
+    ( $key, $method, $filename, $headers, $uri_params ) = @args;
+  }
 
   if ( !defined $filename ) {
     $filename = $key;
   }
 
-  return $self->_get_key( $key, $method, \$filename, $headers );
+  return $self->_get_key(
+    key        => $key,
+    method     => $method,
+    filename   => \$filename,
+    headers    => $headers,
+    uri_params => $uri_params,
+  );
 }
 
 ########################################################################
@@ -1487,10 +1547,65 @@ cannot be removed if it contains any keys (contents).
 
 This is an alias for C<$s3-E<gt>delete_bucket($bucket)>.
 
-=head2 get_key $key_name, [$method, $headers]
+=head2 get_key key, [method, headers, uri_params]
 
-Takes a key and an optional HTTP method and fetches it from
-S3. The default HTTP method is GET.
+=head2 get_key hashref
+
+Takes a key and optional arguments and returns the hash of metatdata
+which includes the contents of the S3 object.
+
+Example:
+
+ $bucket->get_key(
+   key        => 'foo',
+   uri_params => { versionId => $version },
+   headers    => { Range     => 'bytes=0-9' }
+ );
+
+=over 5
+
+=item key
+
+Key name
+
+=item method
+
+HTTP method (GET or HEAD)
+
+default: GET
+
+=item headers
+
+A hashref of additional headers to send with the request
+
+=item uri-params
+
+A hashref containing key/value pairs representing the URI parameters
+you want to include in the request. Possible parameters are shown below.
+
+See L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_RequestSyntax>
+
+=over 10
+
+=item partNumber
+
+=item response-cache-control
+
+=item response-content-disposition
+
+=item response-content-encoding
+
+=item response-content-language
+
+=item response-content-type
+
+=item response-expires
+
+=item versionId
+
+=back
+
+=back
 
 The method returns C<undef> if the key does not exist in the
 bucket and throws an exception (dies) on server errors.
@@ -1507,15 +1622,50 @@ On success, the method returns a HASHREF containing:
 
 =item @meta
 
+=item content_range
+
+=item last_modified
+
 =back
 
-=head2 get_key_filename $key_name, $method, $filename, $headers
+I<Note that the C<etag> for ranged gets is the MD5 value for the entire file.>
+
+=head2 get_key_filename $key_name, [$method, $filename, $headers, $uri_params]
+
+=head2 get_key_filename $args
+
+Pass a list of arguments or a hash of key value/pairs.
 
 This method works like C<get_key>, but takes an added
 filename that the S3 resource will be written to.
 
 If C<filename> is undefined or an empty string, the a file with the
 key name will be created.
+
+=over 5
+
+=item key (required)
+
+=item method
+
+default: GET
+
+=item filename
+
+default: name of the key
+
+=item headers
+
+A hashref of additional headers to send with the request
+
+=item uri-params
+
+A hashref containing key/value pairs representing the URI parameters
+you want to include in the request. See L</get_key> for possible parameters.
+
+See L<https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html#API_GetObject_RequestSyntax>
+
+=back
 
 =head2 list
 

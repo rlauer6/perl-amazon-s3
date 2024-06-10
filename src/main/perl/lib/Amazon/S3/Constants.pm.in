@@ -61,6 +61,8 @@ Readonly our $EQUAL_SIGN    => q{=};
 
 # HTTP codes
 
+Readonly our $HTTP_PARTIAL_CONTENT   => 206;
+Readonly our $HTTP_NO_CONTENT        => 204;
 Readonly our $HTTP_BAD_REQUEST       => 400;
 Readonly our $HTTP_UNAUTHORIZED      => 401;
 Readonly our $HTTP_PAYMENT_RQUIRED   => 402;
@@ -127,7 +129,9 @@ our %EXPORT_TAGS = (
       $HTTP_PAYMENT_RQUIRED
       $HTTP_FORBIDDEN
       $HTTP_NOT_FOUND
+      $HTTP_NO_CONTENT
       $HTTP_MOVED_PERMANENTLY
+      $HTTP_PARTIAL_CONTENT
       $HTTP_FOUND
       $HTTP_SEE_OTHER
       $HTTP_NOT_MODIFIED
