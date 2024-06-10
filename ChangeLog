@@ -1,3 +1,19 @@
+Mon Jun 10 07:30:59 2024  Rob Lauer  <rlauer6@comcast.net>
+
+	[0.66]:
+	* NEWS.md: updated
+	* .gitignore: *.log
+	* src/main/perl/run-test: new from test.localstack
+	* src/main/perl/S3TestUtils.pm
+	(set_s3_host): AMAZON_S3_SKIP_ACLS, not SKIP_PERMISSIONS
+	* src/main/perl/t/01-api.t
+	- likewise
+	(like_acl_allrusers_read):
+	- dump flag
+	* src/main/perl/t/04-list-buckets.t: whitespace
+	* src/main/perl/t/06-list-multipart-uploads.t
+	- ignore case on status header (LocalStack <> AWS)
+
 Thu Nov 30 13:56:08 2023  Rob Lauer  <rlauer6@comcast.net>
 
 	[0.66]:

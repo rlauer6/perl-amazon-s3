@@ -24,9 +24,12 @@ noted here, as well.
 > See the documentation for `Amazon::S3`, `Amazon::S3::Bucket` and
 > `Amazon::S3::V2` for more details.
 
-# perl-Amazon-S3 0.66 (2023-12-09)
+# perl-Amazon-S3 0.66 (2024-06-10)
 
-> This version introduces new methods for handling object versions.
+> This version introduces new methods for handling object version and
+> introduces some new methods that more accurately track the S3
+> API. Those new methods are experimental and will be released as
+> version 2.
 
 ## Enhancements
 
@@ -34,9 +37,18 @@ noted here, as well.
   * `delete_key()` now accepts an optional version identifier
   * `get_bucket_versioning()` - returns status of bucket versioning
   * `put_bucket_versioning()` - sets the status of bucket versioning
-  
 * `Amazon:S3`
   * `list_object_versions()` - method that returns version metadata
+* start of version 2 changes
+* refactoring
+* allow additional headers for several existing methods
+* pod fixes & updates
+
+## Fixes
+
+* unit tests fixes
+  * LocalStack fixes
+  * refactored several tests
 
 # perl-Amazon-S3 0.65 (2023-11-28)
 

@@ -1,3 +1,4 @@
+*.log
 autotools/install-sh
 autotools/missing
 *.tar.gz
@@ -6,7 +7,6 @@ config.status
 aclocal.m4
 autom4te.cache/*
 configure
-config.log
 **/Makefile.in
 Makefile
 src/main/perl/lib/**/*.pm
