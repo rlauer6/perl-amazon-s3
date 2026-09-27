@@ -216,7 +216,7 @@ gen-vars-file = $(file >$(1),)$(foreach v,$(TEMPLATE_VARS),$(file >>$(1),$(v)=$(
 # combined rule below builds/checks modules in correct dependency
 # order without needing a separate phase-barrier pass.
 
-LOCAL_PREREQ := $(if $(syntax_on),local)
+LOCAL_PREREQ := $(if $(syntax_on),local/.installed)
 
 %.pm: %.pm.in | $(LOCAL_PREREQ)
 	$(call gen-vars-file,$<.vars)

@@ -27,3 +27,12 @@ local/**
 bin/run-test
 bin/s3-perl.pl
 bin/amzn-s3-cli
+**/*.bak
+**/*.log
+**/*.pod
+**/*.tmp
+**/.\#*
+**/\#*
+cpanfile.*
+test-requires.cpanfile
+test-requires.scan
