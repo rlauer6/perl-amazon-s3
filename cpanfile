@@ -1,6 +1,4 @@
 requires "CLI::Simple", "2.2.3";
-requires "CLI::Simple::Constants", "2.2.3";
-requires "CLI::Simple::Utils", "2.2.3";
 requires "Carp::Always", "0.16";
 requires "Class::Accessor::Fast", "0.51";
 requires "Digest::CRC", "0.24";
@@ -19,7 +17,6 @@ requires "Net::Amazon::Signature::V4", "0.22";
 requires "Readonly", "2.05";
 requires "Test::Output", "1.036";
 requires "URI", "5.37";
-requires "URI::Escape", "5.37";
 requires "XML::Simple", "2.25";
 suggests "Amazon::Credentials", "2.0.0";
 suggests "Crypt::Blowfish", "2.14";

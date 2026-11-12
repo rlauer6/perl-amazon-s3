@@ -120,7 +120,7 @@ Readonly::Hash our %CHECKSUM_TYPES => (
         $digest->add( $parameters{data} // $EMPTY );
       }
 
-      return $digest->digest;
+      return pack 'L>', $digest->digest;
     },
   },
   crc32c => {

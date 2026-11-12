@@ -36,3 +36,12 @@ bin/amzn-s3-cli
 cpanfile.*
 test-requires.cpanfile
 test-requires.scan
+!cpanfile.darkpan
+*.reconciled
+*.rendered
+build-config.mk
+deps.mk
+release-*.diffs
+release-*.gz
+release-*.lst
+release-*.status

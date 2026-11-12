@@ -14,6 +14,9 @@ RECOMMENDED_ARTIFACTS = \
      README.md \
      requires \
      test-requires \
+     suggests \
+     recommends \
+     test-requires \
      .gitignore \
      .includes/ \
      .prompts/
@@ -30,7 +33,10 @@ git: ## initializes a git repository and commits artifacts (NO_COMMIT=1 to stop 
 	  fi; \
 	done; \
 	changelog_files=$$(mktemp); trap 'rm -f $$changelog_files' EXIT; \
-	for a in $$(find . -type d -path "./.git" -prune -o -type f -print); do \
+	for a in $$(find . -type d \( \
+	    -name .git \
+	    -o -name local \
+	  \) -prune -o -type f -print); do \
 	  echo -e "\t* $${a#./}: new" >>$$changelog_files; \
 	done; \
 	sort $$changelog_files >>ChangeLog; \

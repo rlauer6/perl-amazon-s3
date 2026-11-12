@@ -1,25 +1,20 @@
 #!/usr/bin/env bash
-# -*- mode: sh; -*-
+# -*- mode: bash; -*-
 ########################################################################
 #  CI script suitable for GitHub actions and other runners
 ########################################################################
 #
-# To run locally:
-
-# Assuming your project directory name is the same as your repo name
-# repo_name=$(basename -s .git "$(git remote get-url origin)")
-# docker run --rm -it \
-#   -v "$(pwd)/builder:/builder" \
-#   -v "$(pwd):/$(basename $(pwd)) \
-#   -e GITHUB_REF_NAME=master \
-#   -e REPO=$(basename  -s .git "$(git remote get-url origin)")
-#   -e INSTALLER=cpm \
-#   debian:trixie \
-#   /bin/bash
+# Run from the root of a checked-out project:
 #
-# --or--
+#   ./builder
 #
-#  make build-ci
+# Or pass the project directory explicitly:
+#
+#   /builder /path/to/project
+#
+# To run in the standard clean-room container:
+#
+#   make build-ci
 #
 ########################################################################
 
@@ -31,13 +26,18 @@ function install_build_deps {
     
     EXTRA_DEPS=(CPAN::Maker::Bootstrapper)
 
-    if [[ -n "$PERLCRITICRC" ]]; then
-        EXTRA_DEPS+=(Perl::Critic Perl::Critic::Policy::Compatibility::PodMinimumVersion)
-        EXTRA_DEPS+=(Perl::Critic::Policy::Community::PreferredAlternatives)
-    fi
+    if [[ "${LINT:-off}" =~ ^([Oo][Nn])$ ]]; then
+        if [[ -n "${PERLCRITICRC:-}" ]]; then
+            EXTRA_DEPS+=(
+                Perl::Critic
+                Perl::Critic::Community
+                Perl::Critic::Policy::Compatibility
+            )
+        fi
 
-    if [[ -n "$PERLTIDYRC" ]]; then
-        EXTRA_DEPS+=(Perl::Tidy)
+        if [[ -n "${PERLTIDYRC:-}" ]]; then
+            EXTRA_DEPS+=(Perl::Tidy)
+        fi
     fi
 
     $INSTALLER "${EXTRA_DEPS[@]}"
@@ -76,10 +76,17 @@ function install_build_deps {
 # main script starts here
 ########################################################################
 
-REPO="$1"
-
 set -euo pipefail
 set -x
+
+PROJECT_DIR="${1:-$(pwd)}"
+
+if ! [[ -d "$PROJECT_DIR" ]]; then
+    echo >&2 "ERROR: project directory does not exist ($PROJECT_DIR)"
+    exit 1
+fi
+
+cd "$PROJECT_DIR"
 
 ########################################################################
 # Install the minimum set of dependencies required to do a build
@@ -106,25 +113,6 @@ elif [[ $INSTALLER =~ cpanm ]]; then
 else
     echo >&2 "ERROR: unknown installer ($INSTALLER)"
     exit 1;
-fi
-
-if [[ -n "$REPO" ]]; then
-    dir=$(basename $REPO .git)
-    if ! [[ -d "$dir" ]]; then
-        git clone $REPO
-    fi
-    cd $dir
-fi
-
-BRANCH_NAME="${BUILD_BRANCH:-${GITHUB_REF_NAME:-}}"
-if [[ -n "${BRANCH_NAME}" ]]; then
-    if [[ -d ".git" ]]; then
-        echo "checking out $BRANCH_NAME"
-        git checkout "$BRANCH_NAME"
-    fi
-else
-   BRANCH_NAME=$(git branch --show-current)
-   echo "BRANCH: $BRANCH_NAME"
 fi
 
 if [[ -e build-apt-deps ]]; then
@@ -155,59 +143,73 @@ else
     INSTALLER="$INSTALLER ${RESOLVERS[@]}"
 fi
 
-########################################################################
-# Note that we deliberately do the robust build:
-# LINT=on, SCAN=on, PERLCRITIC=on, PERLTIDY=on
-#-----------------------------------------------------------------------
-# If your build does not work with these on, try turning them
-# off by uncommenting the lines below.
-#-----------------------------------------------------------------------
-# SYNTAX_CHECKING=off
-# SCAN=off
-# LINT=off
-########################################################################
+set -a
+test ! -e ./builder.env || . ./builder.env
 
-export PERLTIDYRC=$(find . -name '.perltidyrc' -o -name 'perltidyrc')
-export PERLCRITICRC=$(find . -name '.perlcriticrc' -o -name 'perlcriticrc')
+if [[ ! -v PERLTIDYRC ]]; then
+    PERLTIDYRC=$(find . \( -name '.perltidyrc' -o -name 'perltidyrc' \) -print -quit)
+fi
+
+if [[ ! -v PERLCRITICRC ]]; then
+    PERLCRITICRC=$(find . \( -name '.perlcriticrc' -o -name 'perlcriticrc' \) -print -quit)
+fi
+
+if [[ -n "${PERLTIDYRC:-}" && ! -f "$PERLTIDYRC" ]]; then
+    echo >&2 "ERROR: PERLTIDYRC does not exist: $PERLTIDYRC"
+    exit 1
+fi
+
+if [[ -n "${PERLCRITICRC:-}" && ! -f "$PERLCRITICRC" ]]; then
+    echo >&2 "ERROR: PERLCRITICRC does not exist: $PERLCRITICRC"
+    exit 1
+fi
+
+if [[ "${LINT:-off}" =~ ^([Oo][Nn])$ ]] &&
+       [[ -z "${PERLTIDYRC:-}" ]] &&
+       [[ -z "${PERLCRITICRC:-}" ]]; then
+    echo >&2 "ERROR: LINT=on but no perltidyrc or perlcriticrc was found"
+    exit 1
+fi
+
+PERL5LIB="$(pwd)/local/lib/perl5"
+
+set +a
+
 set +x
-                           echo "+-------------------------------------------------"
-                           echo "|      BUILD_DATE: $(date +'%Y-%m-%d %H:%M:%S')"
-                           echo "|          BRANCH: $BRANCH_NAME"
-                           echo "|            SCAN: ${SCAN:-on}"
-                           echo "| SYNTAX_CHECKING: ${SYNTAX_CHECKING:-on}"
-test -n "$PERLTIDYRC" &&   echo "|        PERLTIDY: ${PERLTIDYRC:-disabled}"
-test -n "$PERLCRITICRC" && echo "|      PERLCRITIC: ${PERLCRITICRC:-disabled}"
+
+{
+echo "+-------------------------------------------------"
+echo "|      BUILD_DATE: $(date +'%Y-%m-%d %H:%M:%S')"
+echo "|     PROJECT_DIR: $(pwd)"
+echo "|            SCAN: ${SCAN:-on}"
+echo "| SYNTAX_CHECKING: ${SYNTAX_CHECKING:-off}"
+echo "|            LINT: ${LINT:-off}"
+
+if [[ -n "${PERLTIDYRC:-}" ]]; then
+    echo "|        PERLTIDY: $PERLTIDYRC"
+fi
+
+if [[ -n "${PERLCRITICRC:-}" ]]; then
+    echo "|      PERLCRITIC: $PERLCRITICRC"
+fi
 
 if [[ "$INSTALLER" =~ cpanm ]]; then
-                           echo "|         MIRRORS: ${MIRRORS[@]}"
-                           echo "|  PERL_CPANM_OPT: ${PERL_CPANM_OPT:-}"
+    echo "|         MIRRORS: ${MIRRORS[*]}"
+    echo "|  PERL_CPANM_OPT: ${PERL_CPANM_OPT:-}"
 else
-                           echo "|       RESOLVERS: ${RESOLVERS[@]}"
+    echo "|       RESOLVERS: ${RESOLVERS[*]}"
 fi
-                           echo "+-------------------------------------------------"
+
+echo "+-------------------------------------------------"
+} >&2
+
 set -x
 
 install_build_deps
 
-########################################################################
-# Uncomment these to increase verbosity level of the build
-########################################################################
-# make-cpan-dist debug mode
-#-----------------------------------------------------------------------
-# DEBUG=1
-########################################################################
+PATH=/build/local/bin:$PATH
+make clean
+make builder-pre
 
-########################################################################
-# make-cpan-dist.pl log level
-#-----------------------------------------------------------------------
-# LOG_LEVEL=trace
-########################################################################
-
-########################################################################
-# Full output of make steps
-#-----------------------------------------------------------------------
-# export NO_ECHO=""
-########################################################################
-export PERL5LIB=$(pwd)/local/lib/perl5
-
-time make CMB_VERSION_DRIFT=ignore NO_ECHO=
+time make
+make builder-post

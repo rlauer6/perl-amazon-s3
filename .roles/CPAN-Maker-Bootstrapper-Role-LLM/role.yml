@@ -1,0 +1,20 @@
+---
+roles:  
+  annotate:                 CPAN::Maker::Bootstrapper::Role::LLM::Annotator
+  change-log:               CPAN::Maker::Bootstrapper::Role::LLM::ChangeLog
+  code-finding:             CPAN::Maker::Bootstrapper::Role::LLM::Reviewer
+  code-review:              CPAN::Maker::Bootstrapper::Role::LLM::Reviewer
+  models:                   CPAN::Maker::Bootstrapper::Role::LLM::Models
+  pod-finding:              CPAN::Maker::Bootstrapper::Role::LLM::Reviewer
+  pod-review:               CPAN::Maker::Bootstrapper::Role::LLM::Reviewer
+  release-notes:            CPAN::Maker::Bootstrapper::Role::LLM::ReleaseNotes
+  update-annotations:       CPAN::Maker::Bootstrapper::Role::LLM::Annotator
+options:
+  - max-tokens|t=i
+  - model|M=s
+extra_options:
+  - llm
+  - llm_api_key_helper
+default_options:
+  max_tokens: 4096
+  model: claude-sonnet-4-6
