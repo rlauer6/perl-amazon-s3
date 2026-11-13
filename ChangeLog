@@ -1,3 +1,10 @@
+Fri Nov 13 08:41:30 2026  Rob Lauer  <rclauer@gmail.com>
+
+	[2.1.3]:
+	* README.md: generated
+	* VERSION: bump
+	* lib/Amazon/S3.pm.in: POD fixes only
+
 Thu Nov 12 11:46:02 2026  Rob Lauer  <rclauer@gmail.com>
 	[2.1.3]:
 	* VERSION: bump
